@@ -2,7 +2,7 @@ const express = require('express')
 const cors = require('cors')
 const jwt = require('jsonwebtoken')
 
-const SECRET_KEY = "randomsecretkey"
+const SECRET_KEY = "randomsecretkey" // Generate strong security key and hide in ENV file
 const app = express()
 app.use(cors())
 app.use(express.json())
@@ -46,17 +46,17 @@ app.post("/api/signup", (req, res) => {
     const { password } = req.body
 
     if(!email || !username || !password){
-        return res.status(400).json({ error: "Missing field"})
+        return res.status(400).json({ error: "Missing field" })
     }
 
-    if(users.find(u => u.usernam === username)){ 
-        return res.status(409).json({ error: "Username already exist"})
+    if(users.find(u => u.username === username)){ 
+        return res.status(409).json({ error: "Username already exist" })
     }
 
     users.push({ email: email, username: username, password: password}) // Replace with call to insert into database
     const token = jwt.sign({ username: username, email: email }, SECRET_KEY, {expiresIn: '1h'})
 
-    return res.status(200).json({
+    return res.status(201).json({
         message: `Registering User... (${username}, ${email})`,
         user: username,
         email : email,
@@ -66,7 +66,7 @@ app.post("/api/signup", (req, res) => {
 
 function authToken(req, res, next){
     const authHeader = req.headers['authorization']
-    const token = authHead && authHead.split(' ')[1]
+    const token = authHeader && authHeader.split(' ')[1]
 
     if(!token){ 
         return res.sendStatus(401)
