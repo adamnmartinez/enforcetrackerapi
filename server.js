@@ -22,7 +22,7 @@ app.post("/api/login", (req, res) => {
     const { username } = req.body
     const { password } = req.body
 
-    return res.status(200).json({
+    return res.status(201).json({
         message: `Authenticated User! (${username})`,
         user: username,
         token: "randomtoken"
@@ -39,5 +39,14 @@ app.post("/api/signup", (req, res) => {
         user: username,
         email : email,
         token: "randomtoken"
+    })
+})
+
+app.post("/api/access", (req, res) => {
+    const { token } = req.body
+
+    return res.status(200).json({
+        message: "Token validated, access granted."
+
     })
 })
