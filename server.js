@@ -1,6 +1,8 @@
 const express = require('express')
 const cors = require('cors')
 const jwt = require('jsonwebtoken')
+const bcrypt = require('bcrypt')
+const { v4: uuidv4 } = require('uuid')
 
 const SECRET_KEY = "randomsecretkey" // Generate strong security key and hide in ENV file
 const app = express()
@@ -22,16 +24,21 @@ app.get("/", (req, res) => {
     })
 })
 
-app.post("/api/login", (req, res) => {
+app.post("/api/login", async (req, res) => {
     const { username } = req.body
     const { password } = req.body
 
-    const user = users.find(u => u.username === username && u.password === password)
+    const user = users.find(u => u.username === username && u.password === password) //TODO: replace with DB query
     if (!user){
         return res.status(401).json({ error: "Invalid credentials"})
     }
     
-    const token = jwt.sign({ username: user.username, email: user.email }, SECRET_KEY, {expiresIn: '1h'})
+    const PassValid = await bcrypt.compare(password, user.password)
+    if(!PassValid){
+        return res.status(401).json({ error: "Invalid credentials"})
+    }
+
+    const token = jwt.sign({ id: user.id, username: user.username, email: user.email }, SECRET_KEY, {expiresIn: '1h'})
     
     return res.status(200).json({
         message: `Authenticated User! (${username})`,
@@ -40,7 +47,7 @@ app.post("/api/login", (req, res) => {
     })
 })
 
-app.post("/api/signup", (req, res) => {
+app.post("/api/signup", async (req, res) => {
     const { email } = req.body
     const { username } = req.body
     const { password } = req.body
@@ -49,12 +56,21 @@ app.post("/api/signup", (req, res) => {
         return res.status(400).json({ error: "Missing field" })
     }
 
-    if(users.find(u => u.username === username)){ 
+    if(users.find(u => u.username === username)){ //TODO: Replace with DB lookup
         return res.status(409).json({ error: "Username already exist" })
     }
 
-    users.push({ email: email, username: username, password: password}) // Replace with call to insert into database
-    const token = jwt.sign({ username: username, email: email }, SECRET_KEY, {expiresIn: '1h'})
+    const hashPassword = await bcrypt.hash(password, 10) //hash password
+
+    const user = {
+        id: uuidv4(),
+        email: email, 
+        username: username,
+        password: hashPassword
+    }
+
+    users.push(user) // Replace DB insert
+    const token = jwt.sign({ id: user.id, username: user.username, email: user.email }, SECRET_KEY, {expiresIn: '1h'})
 
     return res.status(201).json({
         message: `Registering User... (${username}, ${email})`,
@@ -82,8 +98,14 @@ function authToken(req, res, next){
 }
 
 app.get("/api/me", authToken, (req, res) => {
+    const user = users.find(u => u.id === req.user.id) //TODO: replace with DB lookup
+    if(!user){
+        return res.sendStatus(404)
+    }
+
     return res.status(200).json({
-        message: "Loading user data",
-        user: req.user
+        id: user.id,
+        username: user.username,
+        email: user.email
     })
 })
