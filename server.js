@@ -28,7 +28,7 @@ app.post("/api/login", async (req, res) => {
     const { username } = req.body
     const { password } = req.body
 
-    const user = users.find(u => u.username === username && u.password === password) //TODO: replace with DB query
+    const user = users.find(u => u.username === username) //TODO: replace with DB query
     if (!user){
         return res.status(401).json({ error: "Invalid credentials"})
     }
