@@ -2,7 +2,9 @@ const express = require('express')
 const cors = require('cors')
 const jwt = require('jsonwebtoken')
 const bcrypt = require('bcrypt')
+const { Client } = require('pg')
 const { v4: uuidv4 } = require('uuid')
+require('dotenv').config()
 
 const SECRET_KEY = "randomsecretkey" // Generate strong security key and hide in ENV file
 const app = express()
@@ -13,9 +15,21 @@ const PORT = 8000
 
 const users = []; //change with database connection
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
     console.log(`Server initalized on port ${PORT}`)
-    // TODO: Get Database Connection
+    const client = new Client({
+        host: process.env.PG_HOST,
+        port: process.env.PG_PORT,
+        user: process.env.PG_USER,
+        password: process.env.PG_PASSWORD,
+        database: process.env.PG_DATABASE,
+        ssl: true
+    })
+
+    await client.connect()
+    const res = await client.query('SELECT $1::text as connected', ['Connection to postgres successful!']);
+    console.log(res.rows[0].connected);
+    await client.end()
 })
 
 app.get("/", (req, res) => {
