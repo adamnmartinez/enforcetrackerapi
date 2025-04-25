@@ -2,12 +2,13 @@ const express = require('express')
 const cors = require('cors')
 const jwt = require('jsonwebtoken')
 const bcrypt = require('bcrypt')
-const { Client } = require('pg')
+const { Client, Pool } = require('pg')
 const { v4: uuidv4 } = require('uuid')
 require('dotenv').config()
 
 const SECRET_KEY = "randomsecretkey" // Generate strong security key and hide in ENV file
 const app = express()
+
 app.use(cors())
 app.use(express.json())
 
@@ -15,21 +16,22 @@ const PORT = 8000
 
 const users = []; //change with database connection
 
+const pool = new Pool({
+    host: process.env.PG_HOST,
+    port: process.env.PG_PORT,
+    user: process.env.PG_USER,
+    password: process.env.PG_PASSWORD,
+    database: process.env.PG_DATABASE,
+    ssl: {
+        rejectUnauthorized: false, 
+    }
+})
+
 app.listen(PORT, async () => {
     console.log(`Server initalized on port ${PORT}`)
-    const client = new Client({
-        host: process.env.PG_HOST,
-        port: process.env.PG_PORT,
-        user: process.env.PG_USER,
-        password: process.env.PG_PASSWORD,
-        database: process.env.PG_DATABASE,
-        ssl: true
-    })
-
-    await client.connect()
-    const res = await client.query('SELECT $1::text as connected', ['Connection to postgres successful!']);
+    await pool.connect()
+    const res = await pool.query('SELECT $1::text as connected', ['Connection to postgres successful!']);
     console.log(res.rows[0].connected);
-    await client.end()
 })
 
 app.get("/", (req, res) => {
@@ -122,4 +124,25 @@ app.get("/api/me", authToken, (req, res) => {
         username: user.username,
         email: user.email
     })
+})
+
+app.get("/api/dbtest", async (req, res) => {
+    try {
+        const db_res = await pool.query('SELECT NOW() as now');
+        return res.status(200).json({ message: "Server Time Fetched.", data: db_res.rows })
+    } catch (e) {
+        return res.status(500).json({ message: "Could not communicate with database, internal server error."})
+    }
+})
+
+app.get("/api/fetchpins", async (req, res) => {
+    try {
+        const db_res = await pool.query('SELECT * FROM pins');
+        console.log("Fetching pins...")
+        //console.log(db_res.rows)
+        return res.status(200).json({ message: "Pins Fetched", pins: db_res.rows })
+    } catch (e) {
+        console.log("Could not get pins")
+        return res.status(500).json({ message: "Could not fetch pins, internal server error."})
+    }
 })
