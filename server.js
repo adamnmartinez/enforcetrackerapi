@@ -138,11 +138,64 @@ app.get("/api/dbtest", async (req, res) => {
 app.get("/api/fetchpins", async (req, res) => {
     try {
         const db_res = await pool.query('SELECT * FROM pins');
-        console.log("Fetching pins...")
+        console.log("(FETCHPINS) Fetching pins...")
         //console.log(db_res.rows)
         return res.status(200).json({ message: "Pins Fetched", pins: db_res.rows })
     } catch (e) {
-        console.log("Could not get pins")
+        console.log("(FETCHPINS) Could not get pins")
         return res.status(500).json({ message: "Could not fetch pins, internal server error."})
+    }
+})
+
+// ONLY FOR DEBUGGING - DELETE ME
+app.get("/api/userfetch", async (req, res) => {
+    try {
+        const db_res = await pool.query('SELECT * FROM users');
+        console.log("(USERFETCH) Fetching pins...")
+        console.log(db_res.rows)
+        return res.status(200).json({ message: "Users Fetched", pins: db_res.rows })
+    } catch (e) {
+        console.log("(USERFETCH) Could not get users")
+        return res.status(500).json({ message: "Could not fetch users, internal server error."})
+    }
+})
+
+
+app.post("/api/pushpin", async (req, res) => {
+    const { category } = req.body
+    const { longitude } = req.body
+    const { latitude } = req.body
+
+    // USER ID, 
+    // const { author_id } = req.body
+    // const u_id = author_id
+
+    const u_id = 1
+
+    try {
+        const query = {
+            text: 'INSERT INTO pins (uid, is_public, type, longitude, latitude, timestamp) VALUES ($1, $2, $3, $4, $5, $6)',
+            values: [u_id, false, category, parseFloat(longitude), parseFloat(latitude), new Date().toISOString()]
+        }
+
+        const db_res = await pool.query(query);
+        console.log(`(PUSHPIN) Uploading pin...`)
+        return res.status(201).json({ message: "Pin Uploaded" })
+    } catch (e) {
+        console.log("(PUSHPIN) Could not get pins") 
+        return res.status(500).json({ message: "Could not upload, internal server error.", error: e})
+    }
+})
+
+app.post("/api/deletepin", async (req, res) => {
+    const { pin_id } = req.body
+
+    try {
+        const db_res = await pool.query("DELETE FROM pins WHERE pid = $1", [parseInt(pin_id)]);
+        console.log(`(DELETEPIN) Deleting pin (pid: ${pin_id})...`)
+        return res.status(200).json({ message: "Pin Deleted" })
+    } catch (e) {
+        console.log("(DELETEPIN) Could not get pins")
+        return res.status(500).json({ message: "Could not delete pin, internal server error.", error: e})
     }
 })
