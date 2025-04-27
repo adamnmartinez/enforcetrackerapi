@@ -14,7 +14,6 @@ app.use(express.json())
 
 const PORT = 8000
 
-const users = []; //change with database connection
 
 const pool = new Pool({
     host: process.env.PG_HOST,
@@ -44,23 +43,30 @@ app.post("/api/login", async (req, res) => {
     const { username } = req.body
     const { password } = req.body
 
-    const user = users.find(u => u.username === username) //TODO: replace with DB query
-    if (!user){
-        return res.status(401).json({ error: "Invalid credentials"})
-    }
-    
-    const PassValid = await bcrypt.compare(password, user.password)
-    if(!PassValid){
-        return res.status(401).json({ error: "Invalid credentials"})
-    }
+    try {
+        const result = await pool.query('SELECT * FROM users WHERE username = $1', [username]);
+        const user = result.rows[0];
 
-    const token = jwt.sign({ id: user.id, username: user.username, email: user.email }, SECRET_KEY, {expiresIn: '1h'})
-    
-    return res.status(200).json({
-        message: `Authenticated User! (${username})`,
-        user: username,
-        token: token
-    })
+        if (!user){
+            return res.status(401).json({ error: "Invalid credentials"})
+        }
+
+        const PassValid = await bcrypt.compare(password, user.password)
+        if(!PassValid){
+            return res.status(401).json({ error: "Invalid credentials"})
+        }
+
+        const token = jwt.sign({ id: user.id, username: user.username, email: user.email }, SECRET_KEY, {expiresIn: '1h'})
+
+        return res.status(200).json({
+            message: `Authenticated User! (${username})`,
+            user: username,
+            token: token
+        })
+    }catch (err) {
+        console.error("(LOGIN) Database error:", err)
+        return res.status(500).json({ err: "Internal Server Error" })
+    }   
 })
 
 app.post("/api/signup", async (req, res) => {
@@ -72,28 +78,31 @@ app.post("/api/signup", async (req, res) => {
         return res.status(400).json({ error: "Missing field" })
     }
 
-    if(users.find(u => u.username === username)){ //TODO: Replace with DB lookup
-        return res.status(409).json({ error: "Username already exist" })
-    }
+    try{
+        const existing = await pool.query('SELECT * FROM users WHERE username = $1', [username])
+        if(existing.rows.length > 0){
+            return res.status(409).json({ error: "Username already exists" })
+        }
 
-    const hashPassword = await bcrypt.hash(password, 10) //hash password
+        const hashPassword = await bcrypt.hash(password, 10) //hash password
+        const user_id = uuidv4();
 
-    const user = {
-        id: uuidv4(),
-        email: email, 
-        username: username,
-        password: hashPassword
-    }
+        await pool.query(' INSERT INTO users (id, email, username, password) VALUES ($1, $2, $3, $4)', 
+            [user_id, email, username, hashPassword]
+        )
 
-    users.push(user) // Replace DB insert
-    const token = jwt.sign({ id: user.id, username: user.username, email: user.email }, SECRET_KEY, {expiresIn: '1h'})
+        const token = jwt.sign({ id: user.id, username: user.username, email: user.email }, SECRET_KEY, {expiresIn: '1h'})
 
-    return res.status(201).json({
-        message: `Registering User... (${username}, ${email})`,
-        user: username,
-        email : email,
-        token: token
-    })
+        return res.status(201).json({
+            message: `Registering User... ${username}`,
+            user: username,
+            email : email,
+            token: token
+        })
+    } catch (err) {
+        console.error("(SIGNUP) Database error:", err)
+        return res.status(500).json({ err: "Internal Server Error" })
+    } 
 })
 
 function authToken(req, res, next){
@@ -114,16 +123,19 @@ function authToken(req, res, next){
 }
 
 app.get("/api/me", authToken, (req, res) => {
-    const user = users.find(u => u.id === req.user.id) //TODO: replace with DB lookup
-    if(!user){
-        return res.sendStatus(404)
+    try{
+        if(!user){
+            return res.sendStatus(404)
+        }
+        return res.status(200).json({
+            id: user.id,
+            username: user.username,
+            email: user.email
+        })
+    } catch (err) {
+        console.error("(ME) Database error:", err)
+        return res.status(500).json({ error: "Internal Server Error" })
     }
-
-    return res.status(200).json({
-        id: user.id,
-        username: user.username,
-        email: user.email
-    })
 })
 
 app.get("/api/dbtest", async (req, res) => {
