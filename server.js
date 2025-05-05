@@ -14,7 +14,6 @@ app.use(express.json())
 
 const PORT = 8000
 
-
 const pool = new Pool({
     host: process.env.PG_HOST,
     port: process.env.PG_PORT,
@@ -220,11 +219,45 @@ app.post("/api/deletepin", async (req, res) => {
     const { pin_id } = req.body
 
     try {
-        const db_res = await pool.query("DELETE FROM pins WHERE pid = $1", [parseInt(pin_id)]);
+        const db_res = await pool.query("DELETE FROM public_pins WHERE pid = $1", [parseInt(pin_id)]);
         console.log(`(DELETEPIN) Deleting pin (pid: ${pin_id})...`)
         return res.status(200).json({ message: "Pin Deleted" })
     } catch (e) {
-        console.log("(DELETEPIN) Could not get pins")
+        console.log("(DELETEPIN) Could not delete pin")
+        return res.status(500).json({ message: "Could not delete pin, internal server error.", error: e})
+    }
+})
+
+app.post("/api/pushwatcher", async (req, res) => {
+    const { category } = req.body
+    const { longitude } = req.body
+    const { latitude } = req.body
+    const { author_id } = req.body
+
+    try {
+        const query = {
+            text: 'INSERT INTO private_pins (pid, uid, category, longitude, latitude, timestamp) VALUES ($1, $2, $3, $4, $5, $6)',
+            values: [uuidv4(), author_id, category, parseFloat(longitude), parseFloat(latitude), new Date().toISOString()]
+        }
+        const db_res = await pool.query(query);
+        console.log(`(PUSHWATCHER) Uploading user watch zone...`)
+        return res.status(201).json({ message: "Watch Zone Uploaded" })
+    } catch (e) {
+        console.log("(PUSHWATCHER) Could not upload watch zone") 
+        console.log(e)
+        return res.status(500).json({ message: "Could not upload, internal server error.", error: e})
+    }
+})
+
+app.post("/api/deletewatcher", async (req, res) => {
+    const { pin_id } = req.body
+
+    try {
+        const db_res = await pool.query("DELETE FROM private_pins WHERE pid = $1", [parseInt(pin_id)]);
+        console.log(`(DELETEWATCHER) Deleting watcher (pid: ${pin_id})...`)
+        return res.status(200).json({ message: "Pin Deleted" })
+    } catch (e) {
+        console.log("(DELETEWATCHER) Could not delete pin")
         return res.status(500).json({ message: "Could not delete pin, internal server error.", error: e})
     }
 })
