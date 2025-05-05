@@ -14,7 +14,6 @@ app.use(express.json())
 
 const PORT = 8000
 
-
 const pool = new Pool({
     host: process.env.PG_HOST,
     port: process.env.PG_PORT,
@@ -215,6 +214,7 @@ app.post("/api/pushpin", async (req, res) => {
         return res.status(500).json({ message: "Could not upload, internal server error.", error: e})
     }
 })
+
 
 app.post("/api/deletepin", async (req, res) => {
     const { pin_id } = req.body
