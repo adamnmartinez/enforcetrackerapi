@@ -41,6 +41,7 @@ app.get("/", (req, res) => {
 app.post("/api/login", async (req, res) => {
     const { username } = req.body
     const { password } = req.body
+    const { expotoken } = req.body
 
     console.log("(LOGIN) Attempting login...")
 
@@ -63,13 +64,16 @@ app.post("/api/login", async (req, res) => {
         const token = jwt.sign({ id: user.uid, username: user.username, email: user.gmail }, SECRET_KEY, {expiresIn: '1h'})
 
         console.log("(LOGIN) User Authenticated")
+        console.log(`(LOGIN) Updating Expo Token: ${expotoken}`)
+        
+        const expoTokenPushRes = await pool.query('UPDATE users SET expotoken = $1 WHERE uid = $2', [expotoken, user.uid]);
 
         return res.status(200).json({
             message: `Authenticated User! (${username})`,
             user: username,
             token: token
         })
-    }catch (err) {
+    } catch (err) {
         console.error("(LOGIN) Database error:", err)
         return res.status(500).json({ err: "Internal Server Error" })
     }   
