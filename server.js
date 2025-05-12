@@ -176,11 +176,24 @@ app.get("/api/fetchpins", async (req, res) => {
     try {
         const db_res = await pool.query('SELECT * FROM public_pins');
         console.log("(FETCHPINS) Fetching pins...")
-        //console.log(db_res.rows)
         return res.status(200).json({ message: "Pins Fetched", pins: db_res.rows })
     } catch (e) {
         console.log("(FETCHPINS) Could not get pins")
         return res.status(500).json({ message: "Could not fetch pins, internal server error."})
+    }
+})
+
+app.post("/api/fetchwatchers", async (req, res) => {
+    const { uid } = req.body
+
+    try {
+        const db_res = await pool.query('SELECT * FROM private_pins WHERE uid = $1', [ uid ]);
+        console.log("(FETCHWATCHERS) Fetching watch zones...")
+        return res.status(200).json({ message: "Watchers Fetched", pins: db_res.rows })
+    } catch (e) {
+        console.log("(FETCHWATCHERS) Could not get watch zones")
+        console.log(` - ${e}`)
+        return res.status(500).json({ message: "Could not fetch watch zones, internal server error."})
     }
 })
 
