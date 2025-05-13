@@ -74,10 +74,10 @@ app.get('/tasks/validates/:id', async(req, res)=>{
   return res.status(200).json(db_res.rows);
 })
 
-const PORT = 3000
+/*const PORT = 3000
 app.listen(PORT, async () => {
     console.log(`Server initalized on port ${PORT}`)
     await pool.connect()
     const res = await pool.query('SELECT $1::text as connected', ['Connection to postgres successful!']);
     console.log(res.rows[0].connected);
-})
+})*/
