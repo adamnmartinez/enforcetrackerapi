@@ -233,11 +233,11 @@ app.post("/api/pushpin", async (req, res) => {
 })
 
 app.post("/api/deletepin", async (req, res) => {
-    const { pid } = req.body
+    const { pin_id } = req.body
 
     try {
-        const db_res = await pool.query("DELETE FROM public_pins WHERE pid = $1", [pid]);
-        console.log(`(DELETEPIN) Deleting pin (pid: ${pid})...`)
+        const db_res = await pool.query("DELETE FROM public_pins WHERE pid = $1", [parseInt(pin_id)]);
+        console.log(`(DELETEPIN) Deleting pin (pid: ${pin_id})...`)
         return res.status(200).json({ message: "Pin Deleted" })
     } catch (e) {
         console.log("(DELETEPIN) Could not delete pin")
@@ -267,11 +267,11 @@ app.post("/api/pushwatcher", async (req, res) => {
 })
 
 app.post("/api/deletewatcher", async (req, res) => {
-    const { pid } = req.body
+    const { pin_id } = req.body
 
     try {
-        const db_res = await pool.query("DELETE FROM private_pins WHERE pid = $1", [pid]);
-        console.log(`(DELETEWATCHER) Deleting watcher (pid: ${pid})...`)
+        const db_res = await pool.query("DELETE FROM private_pins WHERE pid = $1", [parseInt(pin_id)]);
+        console.log(`(DELETEWATCHER) Deleting watcher (pid: ${pin_id})...`)
         return res.status(200).json({ message: "Pin Deleted" })
     } catch (e) {
         console.log("(DELETEWATCHER) Could not delete pin")
