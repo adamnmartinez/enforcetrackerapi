@@ -233,11 +233,11 @@ app.post("/api/pushpin", async (req, res) => {
 })
 
 app.post("/api/deletepin", async (req, res) => {
-    const { pin_id } = req.body
+    const { pid } = req.body
 
     try {
-        const db_res = await pool.query("DELETE FROM public_pins WHERE pid = $1", [parseInt(pin_id)]);
-        console.log(`(DELETEPIN) Deleting pin (pid: ${pin_id})...`)
+        const db_res = await pool.query("DELETE FROM public_pins WHERE pid = $1", [pid]);
+        console.log(`(DELETEPIN) Deleting pin (pid: ${pid})...`)
         return res.status(200).json({ message: "Pin Deleted" })
     } catch (e) {
         console.log("(DELETEPIN) Could not delete pin")
