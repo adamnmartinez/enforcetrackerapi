@@ -267,11 +267,11 @@ app.post("/api/pushwatcher", async (req, res) => {
 })
 
 app.post("/api/deletewatcher", async (req, res) => {
-    const { pin_id } = req.body
+    const { pid } = req.body
 
     try {
-        const db_res = await pool.query("DELETE FROM private_pins WHERE pid = $1", [parseInt(pin_id)]);
-        console.log(`(DELETEWATCHER) Deleting watcher (pid: ${pin_id})...`)
+        const db_res = await pool.query("DELETE FROM private_pins WHERE pid = $1", [pid]);
+        console.log(`(DELETEWATCHER) Deleting watcher (pid: ${pid})...`)
         return res.status(200).json({ message: "Pin Deleted" })
     } catch (e) {
         console.log("(DELETEWATCHER) Could not delete pin")
