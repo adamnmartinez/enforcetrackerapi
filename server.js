@@ -218,7 +218,7 @@ app.post("/api/pushpin", authToken, async (req, res) => {
                 longitude : parseFloat(pin.longitude)
             }
             const distance = geolib.getDistance(currPoint, pinPoint)
-            return distance <= 100;
+            return distance <= pin.radius;
         })
 
         if(nearby.length > 0){
