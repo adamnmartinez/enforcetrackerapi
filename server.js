@@ -4,6 +4,7 @@ const jwt = require('jsonwebtoken')
 const bcrypt = require('bcrypt')
 const { Client, Pool } = require('pg')
 const { v4: uuidv4 } = require('uuid')
+const geoli = require('geolib')
 require('dotenv').config()
 
 const SECRET_KEY = "randomsecretkey" // Generate strong security key and hide in ENV file
@@ -194,7 +195,7 @@ app.get("/api/userfetch", async (req, res) => {
 })
 
 
-app.post("/api/pushpin", async (req, res) => {
+app.post("/api/pushpin", authToken, async (req, res) => {
     const { category } = req.body
     const { longitude } = req.body
     const { latitude } = req.body
@@ -205,8 +206,27 @@ app.post("/api/pushpin", async (req, res) => {
             text: 'INSERT INTO public_pins (pid, uid, category, longitude, latitude, timestamp) VALUES ($1, $2, $3, $4, $5, $6)',
             values: [uuidv4(), author_id, category, parseFloat(longitude), parseFloat(latitude), new Date().toISOString()]
         }
-        const db_res = await pool.query(query);
+        const db_res = await pool.query(query)
         console.log(`(PUSHPIN) Uploading pin...`)
+        const watch = await pool.query('SELECT * FROM private_pins') //fetch watchpoints
+        const privatePins = watch.rows
+        const currPoint = { latitude : parseFloat(latitude), longitude : parseFloat(longitude)}
+
+        const nearby = privatePins.filter(pin => {
+            const pinPoint = {
+                latitude : parseFloat(pin.latitude),
+                longitude : parseFloat(pin.longitude)
+            }
+            const distance = geolib.getDistance(currPoint, pinPoint)
+            return distance <= 100;
+        })
+
+        if(nearby.length > 0){
+            console.log(`(WATCHPOINT) ${nearby.length} nearby private pins within 100m:`)
+            nearby.forEach(pin => {
+                console.log(`[PID: ${pin.pid}] (${pin.latitude}, ${pin.longitude}) for user ${pin.uid}`)
+            })
+        }
         return res.status(201).json({ message: "Pin Uploaded" })
     } catch (e) {
         console.log("(PUSHPIN) Could not upload pin") 
