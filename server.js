@@ -124,7 +124,6 @@ app.post("/api/signup", async (req, res) => {
 
 function authToken(req, res, next){
     const token = req.headers['authorization']
-    //const token = authHeader && authHeader.split(' ')[1]
 
     if(!token){ 
         console.log("(AUTHTOKEN) No Token Found")
@@ -136,6 +135,7 @@ function authToken(req, res, next){
             console.log("(AUTHTOKEN) Invalid Token")
             return res.sendStatus(403);
         }
+        console.log(`(AUTHTOKEN) Validated User with token ${token}`)
         req.user = user;
         next();
     })
@@ -212,7 +212,7 @@ app.get("/api/userfetch", async (req, res) => {
 })
 
 
-app.post("/api/pushpin", authToken, async (req, res) => {
+app.post("/api/pushpin", async (req, res) => {
     const { category } = req.body
     const { longitude } = req.body
     const { latitude } = req.body
