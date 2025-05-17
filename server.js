@@ -4,7 +4,7 @@ const jwt = require('jsonwebtoken')
 const bcrypt = require('bcrypt')
 const { Client, Pool } = require('pg')
 const { v4: uuidv4 } = require('uuid')
-const geoli = require('geolib')
+const geolib = require('geolib')
 require('dotenv').config()
 
 const SECRET_KEY = "randomsecretkey" // Generate strong security key and hide in ENV file
@@ -100,7 +100,7 @@ app.post("/api/signup", async (req, res) => {
         }
 
         const hashPassword = await bcrypt.hash(password, 10) //hash password
-        const user_id = parseInt(Math.random() * 10000);
+        const user_id = uuidv4()
 
         await pool.query(' INSERT INTO users (uid, gmail, username, password) VALUES ($1, $2, $3, $4)', 
             [user_id, email, username, hashPassword]
@@ -240,6 +240,8 @@ app.post("/api/pushpin", async (req, res) => {
 
         if(nearby.length > 0){
             console.log(`(WATCHPOINT) ${nearby.length} nearby private pins within 100m:`)
+
+            // TODO: Instead of console logging, send a notification.
             nearby.forEach(pin => {
                 console.log(`[PID: ${pin.pid}] (${pin.latitude}, ${pin.longitude}) for user ${pin.uid}`)
             })
@@ -271,11 +273,12 @@ app.post("/api/pushwatcher", async (req, res) => {
     const { longitude } = req.body
     const { latitude } = req.body
     const { author_id } = req.body
+    const { radius } = req.body
 
     try {
         const query = {
-            text: 'INSERT INTO private_pins (pid, uid, category, longitude, latitude, timestamp) VALUES ($1, $2, $3, $4, $5, $6)',
-            values: [uuidv4(), author_id, category, parseFloat(longitude), parseFloat(latitude), new Date().toISOString()]
+            text: 'INSERT INTO private_pins (pid, uid, category, longitude, latitude, timestamp, radius) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+            values: [uuidv4(), author_id, category, parseFloat(longitude), parseFloat(latitude), new Date().toISOString(), radius]
         }
         const db_res = await pool.query(query);
         console.log(`(PUSHWATCHER) Uploading user watch zone...`)
