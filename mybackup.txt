@@ -5,11 +5,11 @@ const bcrypt = require('bcrypt')
 const { Client, Pool } = require('pg')
 const { v4: uuidv4 } = require('uuid')
 const geolib = require('geolib')
-require('dotenv').config()
 
 const { Expo } = require('expo-server-sdk');
 const expo = new Expo();
 
+require('dotenv').config()
 
 const SECRET_KEY = "randomsecretkey" // Generate strong security key and hide in ENV file
 const app = express()
@@ -42,11 +42,14 @@ app.get("/", (req, res) => {
         message: "PinPoint API server is running."
     })
 })
-
+ 
 app.post("/api/login", async (req, res) => {
     const { username } = req.body
     const { password } = req.body
     const { expotoken } = req.body
+
+    console.log("🚨 Received from frontend → expotoken:", expotoken);
+
 
     console.log("(LOGIN) Attempting login...")
 
@@ -71,7 +74,7 @@ app.post("/api/login", async (req, res) => {
         console.log("(LOGIN) User Authenticated")
         console.log(`(LOGIN) Updating Expo Token: ${expotoken}`)
         
-        const expoTokenPushRes = await pool.query('UPDATE users SET expotoken = $1 WHERE uid = $2', [expotoken, user.uid]);
+        const expoTokenPushRes = await pool.query('UPDATE users SET expoToken = $1 WHERE uid = $2', [expotoken, user.uid]);
 
         return res.status(200).json({
             message: `Authenticated User! (${username})`,
@@ -104,7 +107,7 @@ app.post("/api/signup", async (req, res) => {
         }
 
         const hashPassword = await bcrypt.hash(password, 10) //hash password
-        const user_id = uuidv4()
+        const user_id = parseInt(Math.random() * 10000);
 
         await pool.query(' INSERT INTO users (uid, gmail, username, password) VALUES ($1, $2, $3, $4)', 
             [user_id, email, username, hashPassword]
@@ -230,12 +233,35 @@ app.post("/api/pushpin", async (req, res) => {
         const db_res = await pool.query(query)
         console.log(`(PUSHPIN) Uploading pin...`)
 
-        
+        /* ========================== */
+        /* 🔔 DUMMY NOTIFICATION TEST */
+        /* Send push to author of pin */
+        /* ========================== */
+
+        const testTokenRes = await pool.query(`
+          SELECT expotoken FROM users WHERE uid = $1
+        `, [author_id]);
+
+        const testToken = testTokenRes.rows[0]?.expotoken;
+
+        console.log("(PUSH DEBUG) Raw token from DB:", testToken);
+        console.log("(PUSH DEBUG) isExpoPushToken:", Expo.isExpoPushToken(testToken));
+
+        if (testToken && Expo.isExpoPushToken(testToken)) {
+            await expo.sendPushNotificationsAsync([{
+             to: testToken,
+             sound: 'default',
+             body: '✅ Your pin was created!',
+             data: { type: 'pin_created_test' }
+             }]);
+            console.log('📲 Test push sent to author');
+        } else {
+            console.log('❌ No valid expo token for author');
+        }
+
         const watch = await pool.query('SELECT * FROM private_pins') //fetch watchpoints
         const privatePins = watch.rows
         const currPoint = { latitude : parseFloat(latitude), longitude : parseFloat(longitude)}
-
-        console.log("Getting nearby...")
 
         const nearby = privatePins.filter(pin => {
             const pinPoint = {
@@ -246,51 +272,36 @@ app.post("/api/pushpin", async (req, res) => {
             return distance <= pin.radius;
         })
 
-        if(nearby.length > 0){
+        if (nearby.length > 0) {
             console.log(`(WATCHPOINT) ${nearby.length} nearby private pins within 100m:`)
-
-            // TODO: Instead of console logging, send a notification.
             nearby.forEach(pin => {
-                console.log(`[PID: ${pin.pid}] (${pin.latitude}, ${pin.longitude}) for user ${pin.uid}`)
-            })
-            
-            const userIdsToNotify = [...new Set(nearby.map(pin => pin.uid))];
-
-             const result = await pool.query(`
-                SELECT uid, expotoken FROM users
-                WHERE uid = ANY($1)
-            `, [userIdsToNotify]);
-
-            const messages = result.rows
-            .filter(user => Expo.isExpoPushToken(user.expotoken))
-            .map(user => ({
-                to: user.expotoken,
-                sound: 'default',
-                body: '📍 A new pin was dropped in your watchzone!',
-                data: {
-                    type: 'watchzone_alert',
-                newPin: { latitude, longitude, category }
-                }
-            }));
-
-            console.log("🔔 Preparing to send to these Expo tokens:");
-            messages.forEach(msg => {
-            console.log("➡️", msg.to);
+            console.log(`[PID: ${pin.pid}] (${pin.latitude}, ${pin.longitude}) for user ${pin.uid}`)
             });
 
-                if (messages.length > 0) {
-                    await expo.sendPushNotificationsAsync(messages);
-                    console.log(`📲 Sent ${messages.length} watchzone notifications`);
-                } else {
-                    console.log('ℹ No valid expo tokens for nearby users');
-                }
+        //Add the notification block here
+        const userIdsToNotify = [...new Set(nearby.map(pin => pin.uid))];
+        const result = await pool.query(`
+            SELECT uid, expotoken FROM users
+            WHERE uid = ANY($1)
+            `, [userIdsToNotify]);
 
+        const messages = result.rows
+         .filter(user => Expo.isExpoPushToken(user.expotoken))
+         .map(user => ({
+          to: user.expotoken,
+          sound: 'default',
+          body: '📍 A new pin was dropped in your watchzone!',
+          data: { type: 'watchzone_alert', newPin: { latitude, longitude } }
+          }));
 
+        if (messages.length > 0) {
+            await expo.sendPushNotificationsAsync(messages);
+            console.log(`Sent ${messages.length} watchzone notifications`);
         } else {
-            console.log("No nearby pins found.")
-
+            console.log('ℹNo valid expo tokens for nearby users');
         }
-        return res.status(201).json({ message: "Pin Uploaded" })
+       }
+       return res.status(201).json({ message: "Pin Uploaded" })
     } catch (e) {
         console.log("(PUSHPIN) Could not upload pin") 
         console.log(e)
@@ -317,12 +328,11 @@ app.post("/api/pushwatcher", async (req, res) => {
     const { longitude } = req.body
     const { latitude } = req.body
     const { author_id } = req.body
-    const { radius } = req.body
 
     try {
         const query = {
-            text: 'INSERT INTO private_pins (pid, uid, category, longitude, latitude, timestamp, radius) VALUES ($1, $2, $3, $4, $5, $6, $7)',
-            values: [uuidv4(), author_id, category, parseFloat(longitude), parseFloat(latitude), new Date().toISOString(), radius]
+            text: 'INSERT INTO private_pins (pid, uid, category, longitude, latitude, timestamp) VALUES ($1, $2, $3, $4, $5, $6)',
+            values: [uuidv4(), author_id, category, parseFloat(longitude), parseFloat(latitude), new Date().toISOString()]
         }
         const db_res = await pool.query(query);
         console.log(`(PUSHWATCHER) Uploading user watch zone...`)
