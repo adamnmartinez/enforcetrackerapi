@@ -283,7 +283,6 @@ app.post("/api/pushpin", async (req, res) => {
             nearby.forEach(pin => {
                 console.log(`[PID: ${pin.pid}] (${pin.latitude}, ${pin.longitude}) for user ${pin.uid}`)
                 getTokenFromUser(pin.uid).then((token) => {
-                    console.log(`${token}, ${category}, ${pin.category}`)
                     sendNotification(token, category, pin.category)
                 })
                 
