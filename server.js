@@ -26,6 +26,43 @@ const pool = new Pool({
     }
 })
 
+const sendNotification = (expotoken, reptype, zonetype) => {
+    try {
+        fetch("https://exp.host/--/api/v2/push/send", {
+            method: "POST",
+            headers: {
+                "host": "exp.host",
+                "accept": "application/json",
+                "accept-encoding": "gzip, deflate",
+                "content-type": "application/json"
+            },
+            body: JSON.stringify({
+                "to": expotoken,
+                "title": `${reptype}`,
+                "body": `Unconfirmed ${reptype} spotted near your ${zonetype}`
+            })
+        })
+    } catch (e) {
+        console.log(`An error occured trying to send a notification with Expo token ${expotoken}`)
+    }
+}
+
+const getTokenFromUser = async (uid) => {
+    try {
+        const result = await pool.query('SELECT * FROM users WHERE uid = $1', [uid]);
+        const user = result.rows[0];
+
+        if (!user) {
+            console.log("Could not get Expo token from user id")
+            return
+        } else {
+            return user.expotoken
+        }
+    } catch (e) {
+        console.log("Could not get token with user id, possible DB error.")
+    }
+}
+
 app.listen(PORT, async () => {
     console.log(`Server initalized on port ${PORT}`)
     await pool.connect()
@@ -156,7 +193,8 @@ app.get("/api/me", authToken, (req, res) => {
         return res.status(200).json({
             id: user.id,
             username: user.username,
-            email: user.email
+            email: user.email,
+            expo: user.expotoken
         })
     } catch (err) {
         console.error("(ME) Database error:", err)
@@ -244,6 +282,11 @@ app.post("/api/pushpin", async (req, res) => {
             // TODO: Instead of console logging, send a notification.
             nearby.forEach(pin => {
                 console.log(`[PID: ${pin.pid}] (${pin.latitude}, ${pin.longitude}) for user ${pin.uid}`)
+                getTokenFromUser(pin.uid).then((token) => {
+                    console.log(`${token}, ${category}, ${pin.category}`)
+                    sendNotification(token, category, pin.category)
+                })
+                
             })
         }
         return res.status(201).json({ message: "Pin Uploaded" })
