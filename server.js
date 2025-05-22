@@ -22,7 +22,7 @@ const pool = new Pool({
     password: process.env.PG_PASSWORD,
     database: process.env.PG_DATABASE,
     ssl: {
-        rejectUnauthorized: false,  
+        rejectUnauthorized: false,
     }
 })
 
@@ -103,7 +103,7 @@ app.post("/api/login", async (req, res) => {
 
         console.log("(LOGIN) User Authenticated")
         console.log(`(LOGIN) Updating Expo Token: ${expotoken}`)
-        
+
         const expoTokenPushRes = await pool.query('UPDATE users SET expotoken = $1 WHERE uid = $2', [expotoken, user.uid]);
 
         return res.status(200).json({
@@ -114,7 +114,7 @@ app.post("/api/login", async (req, res) => {
     } catch (err) {
         console.error("(LOGIN) Database error:", err)
         return res.status(500).json({ err: "Internal Server Error" })
-    }   
+    }
 })
 
 app.post("/api/signup", async (req, res) => {
@@ -139,7 +139,7 @@ app.post("/api/signup", async (req, res) => {
         const hashPassword = await bcrypt.hash(password, 10) //hash password
         const user_id = uuidv4()
 
-        await pool.query(' INSERT INTO users (uid, gmail, username, password) VALUES ($1, $2, $3, $4)', 
+        await pool.query(' INSERT INTO users (uid, gmail, username, password) VALUES ($1, $2, $3, $4)',
             [user_id, email, username, hashPassword]
         )
 
@@ -156,13 +156,13 @@ app.post("/api/signup", async (req, res) => {
     } catch (err) {
         console.error("(SIGNUP) Database error:", err)
         return res.status(500).json({ err: "Internal Server Error" })
-    } 
+    }
 })
 
 function authToken(req, res, next){
     const token = req.headers['authorization']
 
-    if(!token){ 
+    if(!token){
         console.log("(AUTHTOKEN) No Token Found")
         return res.sendStatus(401)
     }
@@ -291,7 +291,7 @@ app.post("/api/pushpin", async (req, res) => {
         }
         return res.status(201).json({ message: "Pin Uploaded" })
     } catch (e) {
-        console.log("(PUSHPIN) Could not upload pin") 
+        console.log("(PUSHPIN) Could not upload pin")
         console.log(e)
         return res.status(500).json({ message: "Could not upload, internal server error.", error: e})
     }
@@ -327,7 +327,7 @@ app.post("/api/pushwatcher", async (req, res) => {
         console.log(`(PUSHWATCHER) Uploading user watch zone...`)
         return res.status(201).json({ message: "Watch Zone Uploaded" })
     } catch (e) {
-        console.log("(PUSHWATCHER) Could not upload watch zone") 
+        console.log("(PUSHWATCHER) Could not upload watch zone")
         console.log(e)
         return res.status(500).json({ message: "Could not upload, internal server error.", error: e})
     }
@@ -344,4 +344,67 @@ app.post("/api/deletewatcher", async (req, res) => {
         console.log("(DELETEWATCHER) Could not delete pin")
         return res.status(500).json({ message: "Could not delete pin, internal server error.", error: e})
     }
+})
+
+app.post('/api/validates/addUser', async(req, res) =>{
+  const { user }  = req.body
+  try{
+    const query = {
+      text: "INSERT INTO validity (uid) VALUES ($1)",
+      values: [user]
+    }
+    const db_res = await pool.query(query);
+    return res.status(201).json({ message: "Endorsed pin" });
+  }catch (e){
+    console.log("Unable to complete request")
+    console.log(e)
+    return res.status(500).json({ message: "internal server error.", error: e})
+  }
+})
+
+app.post('/api/validates/add', async(req, res) =>{
+  const { user }  = req.body
+  const { pin } = req.body
+  try{
+    const query = {
+      text: "UPDATE validity SET endorsed_pins = endorsed_pins || ARRAY[$1] WHERE uid = $2",
+      values: [pin, user]
+    }
+    const db_res = await pool.query(query);
+    return res.status(201).json({ message: "Endorsed pin" });
+  }catch (e){
+    console.log("Unable to complete request")
+    console.log(e)
+    return res.status(500).json({ message: "internal server error.", error: e})
+  }
+})
+
+app.post('/api/validates/delete', async(req, res) =>{
+  const { user }  = req.body
+  const { pin } = req.body
+
+  try{
+    console.log("Sending remove pin request");
+    const query = {
+      text: 'UPDATE validity SET endorsed_pins = array_remove(endorsed_pins, $1) WHERE uid = $2',
+      values: [pin, user]
+    }
+    const db_res = await pool.query(query);
+    return res.status(201).json({ message: "Unedorsed pin" });
+  }catch (e){
+    console.log(e)
+    return res.status(500).json({ message: "internal server error.", error: e})
+  }
+})
+
+app.get('/api/validates/:id', async(req, res)=>{
+  const pid = req.params['id']
+  const query = {
+    text: 'SELECT * FROM validity WHERE $1 = ANY(endorsed_pins)',
+    values: [pid]
+  }
+  console.log("Sending request")
+  const db_res = await pool.query(query);
+  console.log(db_res.rows);
+  return res.status(200).json(db_res.rows);
 })
