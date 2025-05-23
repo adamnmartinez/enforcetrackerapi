@@ -277,7 +277,7 @@ app.post("/api/pushpin", async (req, res) => {
         })
 
         if(nearby.length > 0){
-            console.log(`(WATCHPOINT) ${nearby.length} nearby private pins within 100m:`)
+            console.log(`(WATCHPOINT) ${nearby.length} nearby private pins within zone radius:`)
 
             // TODO: Instead of console logging, send a notification.
             nearby.forEach(pin => {
