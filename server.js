@@ -149,6 +149,7 @@ app.post("/api/signup", async (req, res) => {
 
         return res.status(201).json({
             message: `Registering User... ${username}`,
+            uid: user_id,
             user: username,
             email : email,
             token: token
