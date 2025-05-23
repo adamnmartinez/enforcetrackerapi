@@ -298,17 +298,30 @@ app.post("/api/pushpin", async (req, res) => {
 
 
 app.post("/api/deletepin", async (req, res) => {
-    const { pid } = req.body
+  const { pid, uid } = req.body;
 
-    try {
-        const db_res = await pool.query("DELETE FROM public_pins WHERE pid = $1", [pid]);
-        console.log(`(DELETEPIN) Deleting pin (pid: ${pid})...`)
-        return res.status(200).json({ message: "Pin Deleted" })
-    } catch (e) {
-        console.log("(DELETEPIN) Could not delete pin")
-        return res.status(500).json({ message: "Could not delete pin, internal server error.", error: e})
+  try {
+    const db_res = await pool.query(
+      "DELETE FROM public_pins WHERE pid = $1 AND uid = $2",
+      [pid, uid]
+    );
+
+    if (db_res.rowCount === 0) {
+      return res.status(403).json({ message: "You are not authorized to delete this pin." });
     }
-})
+
+    return res.status(200).json({ message: "Pin Deleted" });
+
+  } catch (e) {
+    return res.status(500).json({
+      message: "Could not delete pin, internal server error.",
+      error: e
+    });
+  }
+});
+
+
+
 
 app.post("/api/pushwatcher", async (req, res) => {
     const { category } = req.body
