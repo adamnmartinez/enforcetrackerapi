@@ -5,6 +5,7 @@ const bcrypt = require('bcrypt')
 const { Client, Pool } = require('pg')
 const { v4: uuidv4 } = require('uuid')
 const geolib = require('geolib')
+const nodemailer = require('nodemailer')
 require('dotenv').config()
 
 const SECRET_KEY = "randomsecretkey" // Generate strong security key and hide in ENV file
@@ -25,6 +26,32 @@ const pool = new Pool({
         rejectUnauthorized: false,
     }
 })
+
+const transporter = nodemailer.createTransport({
+  host: process.env.MAIL_HOST,
+  port: process.env.MAIL_PORT,
+  secure: false,
+  auth: {
+    user: process.env.MAIL_USER,
+    pass:  process.env.MAIL_PASS
+  },
+});
+
+const sendVerifyEmail = async (recipient) => {
+  try {
+    const info = await transporter.sendMail({
+      from: `"Pinpoint Team" <${process.env.MAIL_USER}>`,
+      to: recipient,
+      subject: "Confirm your PinPoint account!",
+      html: "Thank you for your interest in PinPoint! Click the link below to activate your account.",
+    });
+
+    console.log("Message sent: %s", info.messageId);
+    console.log("Preview URL: %s", nodemailer.getTestMessageUrl(info));
+  } catch (err) {
+    console.error("Error while sending mail", err);
+  }
+}
 
 const sendNotification = (expotoken, reptype, zonetype) => {
     try {
@@ -74,6 +101,16 @@ app.get("/", (req, res) => {
     return res.status(200).json({
         message: "PinPoint API server is running."
     })
+})
+
+app.post("/api/testmail", async (req, res) => {
+    try {
+        const { recipient } = req.body
+        sendVerifyEmail(recipient)
+        res.status(200).json({message: "Email sent."})
+    } catch (e) {
+        res.status(500).json({message: "An error occured sending the verification email.", error: e.toString()})
+    }
 })
 
 app.post("/api/login", async (req, res) => {
