@@ -40,7 +40,7 @@ const transporter = nodemailer.createTransport({
 const sendVerifyEmail = async (recipient) => {
   try {
     const info = await transporter.sendMail({
-      from: `"Pinpoint Team" <${process.env.MAIL_USER}>`,
+      from: `"PinPoint Team" <${process.env.MAIL_USER}>`,
       to: recipient,
       subject: "Confirm your PinPoint account!",
       html: "Thank you for your interest in PinPoint! Click the link below to activate your account.",
