@@ -21,7 +21,7 @@ describe('Backend api tests', () => {
         expect(res.body).toHaveProperty('error')
     })
 
-    test('POST /api/login with bad creditentials return 401', async () => {
+    test('POST /api/login with bad credentials return 401', async () => {
         const res = await request(API_URL).post('/api/login').send({username: 'fake', password: 'wrong'})
         expect(res.statusCode).toBe(401)
         expect(res.body).toHaveProperty('error')
