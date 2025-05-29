@@ -176,9 +176,11 @@ app.post("/api/signup", async (req, res) => {
         const hashPassword = await bcrypt.hash(password, 10) //hash password
         const user_id = uuidv4()
 
-        await pool.query(' INSERT INTO users (uid, gmail, username, password) VALUES ($1, $2, $3, $4)',
+        await pool.query('INSERT INTO users (uid, gmail, username, password) VALUES ($1, $2, $3, $4)',
             [user_id, email, username, hashPassword]
         )
+
+        await pool.query('INSERT INTO validity (uid) VALUES ($1)', [user_id])
 
         const token = jwt.sign({ id: user_id, username: username, email: email }, SECRET_KEY, {expiresIn: '1h'})
 
@@ -358,9 +360,6 @@ app.post("/api/deletepin", async (req, res) => {
   }
 });
 
-
-
-
 app.post("/api/pushwatcher", async (req, res) => {
     const { category } = req.body
     const { longitude } = req.body
@@ -396,22 +395,6 @@ app.post("/api/deletewatcher", async (req, res) => {
     }
 })
 
-app.post('/api/validates/addUser', async(req, res) =>{
-  const { user }  = req.body
-  try{
-    const query = {
-      text: "INSERT INTO validity (uid) VALUES ($1)",
-      values: [user]
-    }
-    const db_res = await pool.query(query);
-    return res.status(201).json({ message: "Endorsed pin" });
-  }catch (e){
-    console.log("Unable to complete request")
-    console.log(e)
-    return res.status(500).json({ message: "internal server error.", error: e})
-  }
-})
-
 app.post('/api/validates/add', async(req, res) =>{
   const { user }  = req.body
   const { pin } = req.body
@@ -421,7 +404,7 @@ app.post('/api/validates/add', async(req, res) =>{
       values: [pin, user]
     }
     const db_res = await pool.query(query);
-    return res.status(201).json({ message: "Endorsed pin" });
+    return res.status(200).json({ message: "Endorsed pin" });
   }catch (e){
     console.log("Unable to complete request")
     console.log(e)
@@ -440,8 +423,55 @@ app.post('/api/validates/delete', async(req, res) =>{
       values: [pin, user]
     }
     const db_res = await pool.query(query);
-    return res.status(201).json({ message: "Unedorsed pin" });
+    return res.status(200).json({ message: "Unendorsed Pin" });
   }catch (e){
+    console.log(e)
+    return res.status(500).json({ message: "internal server error.", error: e})
+  }
+})
+
+app.post("/api/validates/getvalidated", async (req, res) => {
+    const { user } = req.body
+
+    try {
+        const db_res = await pool.query('SELECT * FROM validity WHERE uid = $1', [user]);
+        // isValidated = db_res.rows[0].endorsed_pins.includes(pin)
+        return res.status(200).json({ validated: db_res.rows[0].endorsed_pins})
+
+    } catch (e) {
+        return res.status(500).json({ message: "Could check validity, internal server error.", error: e})
+    }
+})
+
+app.post("/api/validates/getscore", async (req, res) => {
+    const { pin } = req.body
+
+    try {
+        const db_res = await pool.query('SELECT * FROM validity WHERE $1 = ANY(endorsed_pins)', [pin]);
+        return res.status(200).json({ score: db_res.rows.length })
+
+    } catch (e) {
+        return res.status(500).json({ message: "Could check validity, internal server error.", error: e})
+    }
+})
+
+app.post("/api/validates/peek", async (req, res) => {
+    const db_res = await pool.query('SELECT * FROM validity');
+    console.log(db_res.rows)    
+    return res.status(200).json({ rows: db_res.rows })
+})
+
+app.post('/api/validates/addUser', async(req, res) =>{
+  const { user }  = req.body
+  try{
+    const query = {
+      text: "INSERT INTO validity (uid) VALUES ($1)",
+      values: [user]
+    }
+    const db_res = await pool.query(query);
+    return res.status(201).json({ message: "Endorsed pin" });
+  }catch (e){
+    console.log("Unable to complete request")
     console.log(e)
     return res.status(500).json({ message: "internal server error.", error: e})
   }
