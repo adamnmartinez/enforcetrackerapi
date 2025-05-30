@@ -6,6 +6,7 @@ const { Client, Pool } = require('pg')
 const { v4: uuidv4 } = require('uuid')
 const geolib = require('geolib')
 const nodemailer = require('nodemailer')
+const cron = require('node-cron')
 require('dotenv').config()
 
 const SECRET_KEY = "randomsecretkey" // Generate strong security key and hide in ENV file
@@ -488,3 +489,20 @@ app.get('/api/validates/:id', async(req, res)=>{
   console.log(db_res.rows);
   return res.status(200).json(db_res.rows);
 })
+
+async function deleteOldRecords(tableName) {
+  try {
+    const result = await pool.query(
+      `DELETE FROM ${tableName} WHERE timestamp < NOW() - INTERVAL '24 hours';`
+    );
+    console.log(`[CLEANUP] Deleted ${result.rowCount} old records from ${tableName}.`);
+  } catch (err) {
+    console.error(`[CLEANUP ERROR - ${tableName}]`, err);
+  }
+}
+
+
+cron.schedule('0 * * * *', () => {
+  console.log('[CRON] Running scheduled public pin cleanup...');
+  deleteOldRecords('public_pins');
+});
