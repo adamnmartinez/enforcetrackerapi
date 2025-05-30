@@ -37,13 +37,13 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-const sendVerifyEmail = async (recipient) => {
+const sendVerifyEmail = async (vericode, recipient) => {
   try {
     const info = await transporter.sendMail({
       from: `"PinPoint Team" <${process.env.MAIL_USER}>`,
       to: recipient,
       subject: "Confirm your PinPoint account!",
-      html: "Thank you for your interest in PinPoint! Click the link below to activate your account.",
+      html: `Thank you for your interest in PinPoint! Click the link below to activate your account. <br/><br/> Click <a href=${process.env.HOSTNAME+"activate/"+vericode}>here</a> to activate.`,
     });
 
     console.log("Message sent: %s", info.messageId);
@@ -90,6 +90,25 @@ const getTokenFromUser = async (uid) => {
     }
 }
 
+const authToken = (req, res, next) => {
+    const token = req.headers['authorization']
+
+    if(!token){
+        console.log("(AUTHTOKEN) No Token Found")
+        return res.sendStatus(401)
+    }
+
+    jwt.verify(token, SECRET_KEY, (err, user) => {
+        if(err){
+            console.log("(AUTHTOKEN) Invalid Token")
+            return res.sendStatus(403);
+        }
+        console.log(`(AUTHTOKEN) Validated User with token ${token}`)
+        req.user = user;
+        next();
+    })
+}
+
 app.listen(PORT, async () => {
     console.log(`Server initalized on port ${PORT}`)
     await pool.connect()
@@ -101,16 +120,6 @@ app.get("/", (req, res) => {
     return res.status(200).json({
         message: "PinPoint API server is running."
     })
-})
-
-app.post("/api/testmail", async (req, res) => {
-    try {
-        const { recipient } = req.body
-        sendVerifyEmail(recipient)
-        res.status(200).json({message: "Email sent."})
-    } catch (e) {
-        res.status(500).json({message: "An error occured sending the verification email.", error: e.toString()})
-    }
 })
 
 app.post("/api/login", async (req, res) => {
@@ -141,7 +150,12 @@ app.post("/api/login", async (req, res) => {
         console.log("(LOGIN) User Authenticated")
         console.log(`(LOGIN) Updating Expo Token: ${expotoken}`)
 
-        const expoTokenPushRes = await pool.query('UPDATE users SET expotoken = $1 WHERE uid = $2', [expotoken, user.uid]);
+        await pool.query('UPDATE users SET expotoken = $1 WHERE uid = $2', [expotoken, user.uid]);
+
+        if (!user.activated) {
+            console.log("User not activate yet, cannot auth.")
+            return res.status(403).json({ uid: user.uid, error: "Unactivated Account" })
+        }
 
         return res.status(200).json({
             message: `Authenticated User! (${username})`,
@@ -168,8 +182,9 @@ app.post("/api/signup", async (req, res) => {
 
     try{
         const existing = await pool.query('SELECT * FROM users WHERE username = $1', [username])
+
         if(existing.rows.length > 0){
-            console.log("(SIGNUP) User Exists, Terminating...")
+            console.log(`(SIGNUP) User ${username} Already Exists, Terminating...`)
             return res.status(409).json({ error: "Username already exists" })
         }
 
@@ -182,9 +197,13 @@ app.post("/api/signup", async (req, res) => {
 
         await pool.query('INSERT INTO validity (uid) VALUES ($1)', [user_id])
 
+        const vericode = uuidv4()
+        await pool.query('INSERT INTO vericode (code, uid) VALUES ($1, $2)', [vericode, user_id])
+        sendVerifyEmail(vericode, email)
+
         const token = jwt.sign({ id: user_id, username: username, email: email }, SECRET_KEY, {expiresIn: '1h'})
 
-        console.log("(SIGNUP) User Created:")
+        console.log("(SIGNUP) User Created Successfully")
 
         return res.status(201).json({
             message: `Registering User... ${username}`,
@@ -198,25 +217,6 @@ app.post("/api/signup", async (req, res) => {
         return res.status(500).json({ err: "Internal Server Error" })
     }
 })
-
-function authToken(req, res, next){
-    const token = req.headers['authorization']
-
-    if(!token){
-        console.log("(AUTHTOKEN) No Token Found")
-        return res.sendStatus(401)
-    }
-
-    jwt.verify(token, SECRET_KEY, (err, user) => {
-        if(err){
-            console.log("(AUTHTOKEN) Invalid Token")
-            return res.sendStatus(403);
-        }
-        console.log(`(AUTHTOKEN) Validated User with token ${token}`)
-        req.user = user;
-        next();
-    })
-}
 
 app.get("/api/me", authToken, (req, res) => {
     console.log("(ME) Getting user data...")
@@ -242,13 +242,48 @@ app.get("/api/me", authToken, (req, res) => {
     }
 })
 
-app.get("/api/dbtest", async (req, res) => {
+app.get("/api/ping", async (req, res) => {
     try {
         const db_res = await pool.query('SELECT NOW() as now');
         return res.status(200).json({ message: "Server Time Fetched.", data: db_res.rows })
     } catch (e) {
         return res.status(500).json({ message: "Could not communicate with database, internal server error."})
     }
+})
+
+app.get('/api/activate/:vid', async(req, res) => {
+  const vid = req.params['vid']
+  try {
+    const db_res = await pool.query('SELECT * FROM vericode WHERE code = $1', [vid]);
+    const data = db_res.rows[0]
+
+    if (data) {
+        await pool.query('UPDATE users SET activated=TRUE WHERE uid = $1', [data.uid])
+        return res.status(200).json({ message: "Code verified, account activated." })
+    } else {
+        console.log("Could not activate.")
+        return res.status(404).json({ message: "Code could not be found." })
+    }
+    
+  } catch (e) {
+    return res.status(500).json({ message: "Could not communicate with database, internal server error."})
+  }
+})
+
+app.post('/api/regenerate-vericode', async (req, res) => {
+    const { uid } = req.body
+
+    try {
+        const vericode = uuidv4()
+        await pool.query('INSERT INTO vericode (code, uid) VALUES ($1)', [user_id, vericode])
+        sendVerifyEmail(vericode, email)
+    } catch (e) {
+        console.log("Could not regenerate.")
+        return res.status(500).json({ message: "Could not regenerate.", error: e})
+    } finally {
+        return res.status(201).json({ message: "Code regenerated and email sent" })
+    }
+        
 })
 
 app.get("/api/fetchpins", async (req, res) => {
