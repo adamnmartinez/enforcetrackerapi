@@ -35,6 +35,47 @@ const pinCreateLimiter = initializeLimiter(60, 25)
 const watcherCreateLimiter = initializeLimiter(60, 15)
 const validateLimiter = initializeLimiter(60, 25)
 
+const createUsernameChain = () =>
+  body("username")
+    .notEmpty()
+    .withMessage("Username cannot be empty.")
+    .isString()
+    .withMessage("Username must be a string")
+    .isLength({ min: 3, max: 50 })
+    .withMessage("Username must be between 3 and 50 characters.")
+    .matches(/^[a-zA-Z0-9\-_]+$/)
+    .withMessage(
+      "Username can only contain letters, numbers, underscores, and dashes.",
+    );
+
+const createPasswordChain = () =>
+  body("password")
+    .notEmpty()
+    .withMessage("Password cannot be empty.")
+    .isString()
+    .withMessage("Password must be a string")
+    .isLength({ min: 8, max: 50 })
+    .withMessage("Password must be between 8 and 50 characters.")
+    .matches(/[A-Z]/)
+    .withMessage("Password must contain at least one uppercase letter.")
+    .matches(/[a-z]/)
+    .withMessage("Password must contain at least one lowercase letter.")
+    .matches(/[0-9]/)
+    .withMessage("Password must contain at least one number.")
+    .matches(/[!?@#$%^&*_]/)
+    .withMessage("Password must contain at least one special character.");
+
+const createEmailChain = () =>
+  body("email")
+    .notEmpty()
+    .withMessage("E-mail cannot be empty.")
+    .isString()
+    .withMessage("E-mail must be a string")
+    .isLength({ max: 254 })
+    .withMessage("E-mail cannot exceed 254 characters.")
+    .matches(/^[a-zA-Z0-9._%+-]+@ucsc\.edu$/)
+    .withMessage("Access restricted to UCSC students. E-mail must be a valid UCSC address.");
+
 const PORT = 8000
 
 const pool = new Pool({
@@ -124,24 +165,24 @@ app.get("/", (req, res) => {
     })
 })
 
-app.post("/api/testmail", async (req, res) => {
-    try {
-        const { recipient } = req.body
-        sendVerifyEmail(recipient)
-        res.status(200).json({message: "Email sent."})
-    } catch (e) {
-        res.status(500).json({message: "An error occured sending the verification email.", error: e.toString()})
-    }
-})
-
+//app.post("/api/login", authLimiter, createUsernameChain(), createPasswordChain(), async (req, res) => {
 app.post("/api/login", authLimiter, async (req, res) => {
     const { username } = req.body
     const { password } = req.body
     const { expotoken } = req.body
 
     console.log("(LOGIN) Attempting login...")
+    const inputErrors = validationResult(req)
 
     try {
+        if (!inputErrors.isEmpty()) {
+            console.log("[AUTH] User could not be authenticated. Bad Request.");
+            return res.status(400).json({
+                error: "Bad Request",
+                message: `${inputErrors.array()[0].msg}`,
+            });
+        }
+
         const result = await pool.query('SELECT * FROM users WHERE username = $1', [username]);
         const user = result.rows[0];
 
@@ -176,19 +217,23 @@ app.post("/api/login", authLimiter, async (req, res) => {
     }
 })
 
-app.post("/api/signup", registrationLimiter, async (req, res) => {
+app.post("/api/signup", registrationLimiter, createUsernameChain(), createPasswordChain(), createEmailChain(), async (req, res) => {
     const { email } = req.body
     const { username } = req.body
     const { password } = req.body
 
     console.log("(SIGNUP) Creating User...")
-
-    if(!email || !username || !password){
-        console.log("(SIGNUP) Bad Request, Some Fields Not Provided")
-        return res.status(400).json({ error: "Missing field" })
-    }
+    const inputErrors = validationResult(req)
 
     try{
+        if (!inputErrors.isEmpty()) {
+            console.log("[AUTH] User could not be authenticated. Bad Request.");
+            return res.status(400).json({
+                error: "Bad Request",
+                message: `${inputErrors.array()[0].msg}`,
+            });
+        }
+
         const existing = await pool.query('SELECT * FROM users WHERE username = $1', [username])
         if(existing.rows.length > 0){
             console.log("(SIGNUP) User Exists, Terminating...")
