@@ -154,12 +154,13 @@ app.post("/api/login", async (req, res) => {
 
         if (!user.activated) {
             console.log("User not activate yet, cannot auth.")
-            return res.status(403).json({ uid: user.uid, error: "Unactivated Account" })
+            return res.status(403).json({ uid: user.uid, email: user.gmail, error: "Unactivated Account" })
         }
 
         return res.status(200).json({
             message: `Authenticated User! (${username})`,
             user: username,
+            email: user.gmail,
             token: token
         })
     } catch (err) {
@@ -272,18 +273,18 @@ app.get('/api/activate/:vid', async(req, res) => {
 
 app.post('/api/regenerate-vericode', async (req, res) => {
     const { uid } = req.body
+    const { email } = req.body
 
     try {
         const vericode = uuidv4()
-        await pool.query('INSERT INTO vericode (code, uid) VALUES ($1)', [user_id, vericode])
+        await pool.query('INSERT INTO vericode (code, uid) VALUES ($1, $2)', [vericode, uid])
         sendVerifyEmail(vericode, email)
+        return res.status(201).json({ message: "Code regenerated and email sent" })
     } catch (e) {
         console.log("Could not regenerate.")
+        console.log(e)
         return res.status(500).json({ message: "Could not regenerate.", error: e})
-    } finally {
-        return res.status(201).json({ message: "Code regenerated and email sent" })
-    }
-        
+    }   
 })
 
 app.get("/api/fetchpins", async (req, res) => {
@@ -316,7 +317,6 @@ app.get("/api/userfetch", async (req, res) => {
     try {
         const db_res = await pool.query('SELECT * FROM users');
         console.log("(USERFETCH) Fetching pins...")
-        console.log(db_res.rows)
         return res.status(200).json({ message: "Users Fetched", users: db_res.rows })
     } catch (e) {
         console.log("(USERFETCH) Could not get users")
