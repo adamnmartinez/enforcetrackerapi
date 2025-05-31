@@ -9,11 +9,31 @@ const nodemailer = require('nodemailer')
 const cron = require('node-cron')
 require('dotenv').config()
 
+const { body, validationResult } = require("express-validator");
+const { rateLimit } = require("express-rate-limit");
+
 const SECRET_KEY = "randomsecretkey" // Generate strong security key and hide in ENV file
 const app = express()
 
 app.use(cors())
 app.use(express.json())
+
+// Rate Limiting
+const initializeLimiter = (max, minutes) => {
+    // Will send a 429 when the limiter is activated.
+    return rateLimit({
+        windowMs: minutes * 60000, // Window length, measured in miliseconds.
+        max: max, // Number of allowed requests per window.
+        message: { error: "Too many requests", message: "Too many requests, Please try again later" },
+        standardHeaders: "draft-8"
+    })
+}
+
+const registrationLimiter = initializeLimiter(15, 20)
+const authLimiter = initializeLimiter(15, 30)
+const pinCreateLimiter = initializeLimiter(60, 25)
+const watcherCreateLimiter = initializeLimiter(60, 15)
+const validateLimiter = initializeLimiter(60, 25)
 
 const PORT = 8000
 
@@ -114,7 +134,7 @@ app.post("/api/testmail", async (req, res) => {
     }
 })
 
-app.post("/api/login", async (req, res) => {
+app.post("/api/login", authLimiter, async (req, res) => {
     const { username } = req.body
     const { password } = req.body
     const { expotoken } = req.body
@@ -144,6 +164,7 @@ app.post("/api/login", async (req, res) => {
 
         const expoTokenPushRes = await pool.query('UPDATE users SET expotoken = $1 WHERE uid = $2', [expotoken, user.uid]);
 
+        console.log("(LOGIN) User authenticated.")
         return res.status(200).json({
             message: `Authenticated User! (${username})`,
             user: username,
@@ -155,7 +176,7 @@ app.post("/api/login", async (req, res) => {
     }
 })
 
-app.post("/api/signup", async (req, res) => {
+app.post("/api/signup", registrationLimiter, async (req, res) => {
     const { email } = req.body
     const { username } = req.body
     const { password } = req.body
@@ -291,7 +312,7 @@ app.get("/api/userfetch", async (req, res) => {
 })
 
 
-app.post("/api/pushpin", async (req, res) => {
+app.post("/api/pushpin", pinCreateLimiter, async (req, res) => {
     const { category } = req.body
     const { longitude } = req.body
     const { latitude } = req.body
@@ -303,7 +324,6 @@ app.post("/api/pushpin", async (req, res) => {
             values: [uuidv4(), author_id, category, parseFloat(longitude), parseFloat(latitude), new Date().toISOString()]
         }
         const db_res = await pool.query(query)
-        console.log(`(PUSHPIN) Uploading pin...`)
         const watch = await pool.query('SELECT * FROM private_pins') //fetch watchpoints
         const privatePins = watch.rows
         const currPoint = { latitude : parseFloat(latitude), longitude : parseFloat(longitude)}
@@ -329,6 +349,7 @@ app.post("/api/pushpin", async (req, res) => {
                 
             })
         }
+        console.log("(PUSHPIN) Pin Uploaded.")
         return res.status(201).json({ message: "Pin Uploaded" })
     } catch (e) {
         console.log("(PUSHPIN) Could not upload pin")
@@ -361,7 +382,7 @@ app.post("/api/deletepin", async (req, res) => {
   }
 });
 
-app.post("/api/pushwatcher", async (req, res) => {
+app.post("/api/pushwatcher", watcherCreateLimiter, async (req, res) => {
     const { category } = req.body
     const { longitude } = req.body
     const { latitude } = req.body
@@ -396,7 +417,7 @@ app.post("/api/deletewatcher", async (req, res) => {
     }
 })
 
-app.post('/api/validates/add', async(req, res) =>{
+app.post('/api/validates/add', validateLimiter, async(req, res) =>{
   const { user }  = req.body
   const { pin } = req.body
   try{
@@ -405,6 +426,7 @@ app.post('/api/validates/add', async(req, res) =>{
       values: [pin, user]
     }
     const db_res = await pool.query(query);
+    console.log("(VALIDATES/ADD) Pin Endorsed.")
     return res.status(200).json({ message: "Endorsed pin" });
   }catch (e){
     console.log("Unable to complete request")
@@ -462,34 +484,6 @@ app.post("/api/validates/peek", async (req, res) => {
     return res.status(200).json({ rows: db_res.rows })
 })
 
-app.post('/api/validates/addUser', async(req, res) =>{
-  const { user }  = req.body
-  try{
-    const query = {
-      text: "INSERT INTO validity (uid) VALUES ($1)",
-      values: [user]
-    }
-    const db_res = await pool.query(query);
-    return res.status(201).json({ message: "Endorsed pin" });
-  }catch (e){
-    console.log("Unable to complete request")
-    console.log(e)
-    return res.status(500).json({ message: "internal server error.", error: e})
-  }
-})
-
-app.get('/api/validates/:id', async(req, res)=>{
-  const pid = req.params['id']
-  const query = {
-    text: 'SELECT * FROM validity WHERE $1 = ANY(endorsed_pins)',
-    values: [pid]
-  }
-  console.log("Sending request")
-  const db_res = await pool.query(query);
-  console.log(db_res.rows);
-  return res.status(200).json(db_res.rows);
-})
-
 async function deleteOldRecords(tableName) {
   try {
     const result = await pool.query(
@@ -500,7 +494,6 @@ async function deleteOldRecords(tableName) {
     console.error(`[CLEANUP ERROR - ${tableName}]`, err);
   }
 }
-
 
 cron.schedule('0 * * * *', () => {
   console.log('[CRON] Running scheduled public pin cleanup...');
