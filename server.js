@@ -260,10 +260,17 @@ app.get('/api/activate/:vid', async(req, res) => {
 
     if (data) {
         await pool.query('UPDATE users SET activated=TRUE WHERE uid = $1', [data.uid])
-        return res.status(200).json({ message: "Code verified, account activated." })
+
+        res.set('Content-Type', 'text/html')
+        return res.status(200).send(Buffer.from(
+            '<h2> PinPoint Account Activated! </h2> Thank you for registering for our app! <br/><br/> Return to the login page to sign in.'
+        ))
     } else {
         console.log("Could not activate.")
-        return res.status(404).json({ message: "Code could not be found." })
+        res.set('Content-Type', 'text/html')
+        return res.status(404).send(Buffer.from(
+            '<h2>Outdated Verification Code (404 Not Found)</h2> This code could not be found and was likely invalidated, please regenerate your verification e-mail using the login feature on the app and try again.'
+        ))
     }
     
   } catch (e) {
