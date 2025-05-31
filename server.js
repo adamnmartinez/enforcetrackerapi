@@ -260,7 +260,6 @@ app.get('/api/activate/:vid', async(req, res) => {
 
     if (data) {
         await pool.query('UPDATE users SET activated=TRUE WHERE uid = $1', [data.uid])
-
         res.set('Content-Type', 'text/html')
         return res.status(200).send(Buffer.from(
             '<h2> PinPoint Account Activated! </h2> Thank you for registering for our app! <br/><br/> Return to the login page to sign in.'
