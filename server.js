@@ -230,6 +230,7 @@ app.post("/api/login", async (req, res) => {
             return res.status(403).json({ uid: user.uid, email: user.gmail, error: "Unactivated Account" })
         }
 
+        console.log("(LOGIN) User authenticated.")
         return res.status(200).json({
             message: `Authenticated User! (${username})`,
             user: username,

@@ -23,11 +23,15 @@
     "dotenv": "^16.5.0",
     "expo-server-sdk": "^3.15.0",
     "express": "^5.1.0",
+    "express-rate-limit": "^7.5.0",
+    "express-validator": "^7.2.1",
     "geolib": "^3.3.4",
     "jsonwebtoken": "^9.0.2",
+    "node-cron": "^3.0.2",
     "nodemailer": "^7.0.3",
     "nodemon": "^3.1.9",
     "pg": "^8.15.0",
+    "prettier": "^3.5.3",
     "uuid": "^11.1.0"
   },
   "devDependencies": {
