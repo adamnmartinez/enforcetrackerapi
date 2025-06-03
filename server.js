@@ -31,7 +31,7 @@ const initializeLimiter = (max, minutes) => {
 
 const registrationLimiter = initializeLimiter(15, 20)
 const authLimiter = initializeLimiter(15, 30)
-const pinCreateLimiter = initializeLimiter(60, 25)
+const pinCreateLimiter = initializeLimiter(60, 10)
 const watcherCreateLimiter = initializeLimiter(60, 15)
 const validateLimiter = initializeLimiter(60, 25)
 
@@ -115,7 +115,9 @@ const sendVerifyEmail = async (vericode, recipient) => {
   }
 }
 
-const sendNotification = (expotoken, reptype, zonetype) => {
+const CONFIRM_THRESHOLD = 3
+
+const sendNotificationConfirmed = (expotoken, reptype, zonetype) => {
     try {
         fetch("https://exp.host/--/api/v2/push/send", {
             method: "POST",
@@ -128,7 +130,28 @@ const sendNotification = (expotoken, reptype, zonetype) => {
             body: JSON.stringify({
                 "to": expotoken,
                 "title": `${reptype}`,
-                "body": `Unconfirmed ${reptype} spotted near your ${zonetype}`
+                "body": `Confirmed ${reptype} spotted near your ${zonetype == "General" ? "watch zone" : `${zonetype}`}.`
+            })
+        })
+    } catch (e) {
+        console.log(`An error occured trying to send a notification with Expo token ${expotoken}`)
+    }
+}
+
+const sendNotificationUnconfirmed = (expotoken, reptype, zonetype) => {
+    try {
+        fetch("https://exp.host/--/api/v2/push/send", {
+            method: "POST",
+            headers: {
+                "host": "exp.host",
+                "accept": "application/json",
+                "accept-encoding": "gzip, deflate",
+                "content-type": "application/json"
+            },
+            body: JSON.stringify({
+                "to": expotoken,
+                "title": `${reptype}`,
+                "body": `Unconfirmed ${reptype} spotted near your ${zonetype == "General" ? "watch zone" : `${zonetype}`}.`
             })
         })
     } catch (e) {
@@ -448,11 +471,12 @@ app.post("/api/pushpin", pinCreateLimiter, async (req, res) => {
             nearby.forEach(pin => {
                 console.log(`[PID: ${pin.pid}] (${pin.latitude}, ${pin.longitude}) for user ${pin.uid}`)
                 getTokenFromUser(pin.uid).then((token) => {
-                    sendNotification(token, category, pin.category)
+                    sendNotificationUnconfirmed(token, category, pin.category)
                 })
 
             })
         }
+
         console.log("(PUSHPIN) Pin Uploaded.")
         return res.status(201).json({ message: "Pin Uploaded" })
     } catch (e) {
@@ -542,8 +566,49 @@ app.post('/api/validates/add', validateLimiter, async(req, res) =>{
       text: "UPDATE validity SET endorsed_pins = endorsed_pins || ARRAY[$1] WHERE uid = $2",
       values: [pin, user]
     }
-    const db_res = await pool.query(query);
+    const db_res = await pool.query(query)
     console.log("(VALIDATES/ADD) Pin Endorsed.")
+
+    const score_res = await pool.query('SELECT * FROM validity WHERE $1 = ANY(endorsed_pins)', [pin]);
+
+    if (score_res.rows.length >= CONFIRM_THRESHOLD) {
+        const pin_data_query = {
+        text: "SELECT longitude, latitude, category FROM public_pins WHERE pid = $1",
+        values: [pin]
+        }
+
+        const pin_data_res = await pool.query(pin_data_query)
+        const pin_data = pin_data_res.rows[0]
+
+        const watch = await pool.query('SELECT * FROM private_pins') //fetch watchpoints
+        const privatePins = watch.rows
+
+        const nearby = privatePins.filter(zone => {
+                const zonePoint = {
+                    latitude : parseFloat(zone.latitude),
+                    longitude : parseFloat(zone.longitude)
+                }
+                const distance = geolib.getDistance({
+                    latitude: pin_data.latitude,
+                    longitude: pin_data.longitude
+                }, zonePoint)
+                return distance <= zone.radius;
+            })
+
+        if(nearby.length > 0){
+            console.log(`(WATCHPOINT) ${nearby.length} nearby private pins within zone radius:`)
+
+            // TODO: Instead of console logging, send a notification.
+            nearby.forEach(zone => {
+                console.log(`[PID: ${zone.pid}] (${zone.latitude}, ${zone.longitude}) for user ${zone.uid}`)
+                getTokenFromUser(zone.uid).then((token) => {
+                    sendNotificationConfirmed(token, pin_data.category, zone.category)
+                })
+
+            })
+        }
+    }
+
     return res.status(200).json({ message: "Endorsed pin" });
   }catch (e){
     console.log("Unable to complete request")
@@ -595,7 +660,7 @@ app.post("/api/validates/getscore", async (req, res) => {
     }
 })
 
-app.post("/api/validates/peek", async (req, res) => {
+app.get("/api/validates/peek", async (req, res) => {
     const db_res = await pool.query('SELECT * FROM validity');
     console.log(db_res.rows)
     return res.status(200).json({ rows: db_res.rows })
