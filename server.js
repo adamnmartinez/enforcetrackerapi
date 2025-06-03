@@ -391,7 +391,7 @@ app.post("/api/pushpin", pinCreateLimiter, async (req, res) => {
                 getTokenFromUser(pin.uid).then((token) => {
                     sendNotification(token, category, pin.category)
                 })
-                
+
             })
         }
         console.log("(PUSHPIN) Pin Uploaded.")
@@ -525,7 +525,7 @@ app.post("/api/validates/getscore", async (req, res) => {
 
 app.post("/api/validates/peek", async (req, res) => {
     const db_res = await pool.query('SELECT * FROM validity');
-    console.log(db_res.rows)    
+    console.log(db_res.rows)
     return res.status(200).json({ rows: db_res.rows })
 })
 
@@ -540,7 +540,19 @@ async function deleteOldRecords(tableName) {
   }
 }
 
+async function deleteUnvalidated(tableName, timeInterval){
+  try{
+    const result = await pool.query(`DELETE FROM ${tableName}
+      WHERE timestamp < NOW() - INTERVAL '${timeInterval}' AND likes = 0;`);
+    console.log(`Deleting unvalidated pins. { ${result.rowCount} deleted from ${tableName} }`);
+
+  }catch(err){
+    console.error(`[UNVALIDATED CLEANUP ERROR - ${tableName}]`, err);
+  }
+}
+
 cron.schedule('0 * * * *', () => {
   console.log('[CRON] Running scheduled public pin cleanup...');
   deleteOldRecords('public_pins');
+  deleteUnvalidated('public_pins', '4 hours');
 });
