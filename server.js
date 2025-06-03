@@ -260,11 +260,18 @@ app.post("/api/signup", registrationLimiter, createUsernameChain(), createPasswo
             });
         }
 
-        const existing = await pool.query('SELECT * FROM users WHERE username = $1', [username])
+        const existingUser = await pool.query('SELECT * FROM users WHERE username = $1', [username])
 
-        if(existing.rows.length > 0){
-            console.log(`(SIGNUP) User ${username} Already Exists, Terminating...`)
-            return res.status(409).json({ error: "Username already exists" })
+        if (existingUser.rows.length > 0){
+            console.log(`(SIGNUP) Username Already Exists, Terminating...`)
+            return res.status(409).json({ conflict: "username", error: "User account information already in use." })
+        }
+
+        const existingAddress = await pool.query('SELECT * FROM users WHERE gmail = $1', [email])
+
+        if (existingAddress.rows.length > 0){
+            console.log(`(SIGNUP) Email Already In Use, Terminating...`)
+            return res.status(409).json({ conflict: "email", error: "User account information already in use." })
         }
 
         const hashPassword = await bcrypt.hash(password, 10) //hash password
@@ -487,13 +494,26 @@ app.post("/api/pushwatcher", watcherCreateLimiter, async (req, res) => {
     const { radius } = req.body
 
     try {
+        const watcherCountQuery = {
+            text: 'SELECT * FROM private_pins WHERE uid = $1',
+            values: [author_id]
+        }
+
         const query = {
             text: 'INSERT INTO private_pins (pid, uid, category, longitude, latitude, timestamp, radius) VALUES ($1, $2, $3, $4, $5, $6, $7)',
             values: [uuidv4(), author_id, category, parseFloat(longitude), parseFloat(latitude), new Date().toISOString(), radius]
         }
-        const db_res = await pool.query(query);
-        console.log(`(PUSHWATCHER) Uploading user watch zone...`)
-        return res.status(201).json({ message: "Watch Zone Uploaded" })
+
+        const watcher_res = await pool.query(watcherCountQuery)
+
+        if (watcher_res.rowCount >= 2) {
+            console.log("(PUSHWATCHER) Too many watch zones.")
+            return res.status(403).json({ message: "Users are restricted to two watch zones per account." })
+        } else {
+            const db_res = await pool.query(query);
+            console.log(`(PUSHWATCHER) Uploading user watch zone...`)
+            return res.status(201).json({ message: "Watch Zone Uploaded" })
+        }
     } catch (e) {
         console.log("(PUSHWATCHER) Could not upload watch zone")
         console.log(e)
