@@ -503,7 +503,7 @@ app.post("/api/pushpin", pinCreateLimiter, async (req, res) => {
                 const details = await getUserNotificationDetails(pin.uid);
                 if (details && details.notificationsEnabled && details.expotoken) {
                     console.log(`(WATCHPOINT) 1: Sending notification to user ${pin.uid} with token ${details.expotoken}`);
-                    sendNotificationConfirmed(details.expotoken, category, pin.category);
+                    sendNotificationUnconfirmed(details.expotoken, category, pin.category);
                 } else {
                     console.log(`Skipping notification for user ${pin.uid} (muted or no token).`);
                 }
