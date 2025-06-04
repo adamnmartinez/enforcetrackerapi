@@ -131,26 +131,31 @@ const sendNotification = (expotoken, reptype, zonetype) => {
                 "body": `Unconfirmed ${reptype} spotted near your ${zonetype}`
             })
         })
+        console.log(`Notification sent to Expo token ${expotoken} for ${reptype} in ${zonetype}`);
     } catch (e) {
         console.log(`An error occured trying to send a notification with Expo token ${expotoken}`)
     }
 }
 
-const getTokenFromUser = async (uid) => {
+const getUserNotificationDetails = async (uid) => {
     try {
-        const result = await pool.query('SELECT * FROM users WHERE uid = $1', [uid]);
+        const result = await pool.query('SELECT expotoken, notifications_enabled FROM users WHERE uid = $1', [uid]);
         const user = result.rows[0];
 
         if (!user) {
-            console.log("Could not get Expo token from user id")
-            return
+            console.log("Could not get user details for id", uid);
+            return null;
         } else {
-            return user.expotoken
+            return {
+                expotoken: user.expotoken,
+                notificationsEnabled: user.notifications_enabled,
+            };
         }
     } catch (e) {
-        console.log("Could not get token with user id, possible DB error.")
+        console.log("Could not get user details, possible DB error.", e);
+        return null;
     }
-}
+};
 
 app.listen(PORT, async () => {
     console.log(`Server initalized on port ${PORT}`)
@@ -307,7 +312,28 @@ app.get("/api/me", authToken, (req, res) => {
         console.error("(ME) Database error:", err)
         return res.status(500).json({ error: "Internal Server Error" })
     }
-})
+});
+
+// Update notification preference for authenticated user
+app.post("/api/me/notifications", authToken, async (req, res) => {
+  const userId = req.user.id;
+  const { notificationsEnabled } = req.body;
+  if (typeof notificationsEnabled !== "boolean") {
+    return res.status(400).json({ message: "notificationsEnabled must be a boolean" });
+  }
+  try {
+    await pool.query(
+      `UPDATE public.users
+       SET notifications_enabled = $1
+       WHERE uid = $2;`,
+      [notificationsEnabled, userId]
+    );
+    return res.status(200).json({ success: true });
+  } catch (err) {
+    console.error("(NOTIFICATIONS) Error updating notifications_enabled:", err);
+    return res.status(500).json({ message: "Server error" });
+  }
+});
 
 app.get("/api/dbtest", async (req, res) => {
     try {
@@ -383,16 +409,16 @@ app.post("/api/pushpin", pinCreateLimiter, async (req, res) => {
         })
 
         if(nearby.length > 0){
-            console.log(`(WATCHPOINT) ${nearby.length} nearby private pins within zone radius:`)
-
-            // TODO: Instead of console logging, send a notification.
-            nearby.forEach(pin => {
-                console.log(`[PID: ${pin.pid}] (${pin.latitude}, ${pin.longitude}) for user ${pin.uid}`)
-                getTokenFromUser(pin.uid).then((token) => {
-                    sendNotification(token, category, pin.category)
-                })
-
-            })
+            console.log(`(WATCHPOINT) ${nearby.length} nearby private pins within zone radius:`);
+            nearby.forEach(async (pin) => {
+                console.log(`[PID: ${pin.pid}] (${pin.latitude}, ${pin.longitude}) for user ${pin.uid}`);
+                const details = await getUserNotificationDetails(pin.uid);
+                if (details && details.notificationsEnabled && details.expotoken) {
+                    sendNotification(details.expotoken, category, pin.category);
+                } else {
+                    console.log(`Skipping notification for user ${pin.uid} (muted or no token).`);
+                }
+            });
         }
         console.log("(PUSHPIN) Pin Uploaded.")
         return res.status(201).json({ message: "Pin Uploaded" })
