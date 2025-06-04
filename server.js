@@ -20,7 +20,7 @@ app.use(cors({
     methods: ['GET', 'POST'],
     allowedHeaders: ['Content-Type', 'Authorization']
 }))
-app.options('*', cors())
+
 
 app.use(express.json())
 
@@ -502,7 +502,8 @@ app.post("/api/pushpin", pinCreateLimiter, async (req, res) => {
                 console.log(`[PID: ${pin.pid}] (${pin.latitude}, ${pin.longitude}) for user ${pin.uid}`);
                 const details = await getUserNotificationDetails(pin.uid);
                 if (details && details.notificationsEnabled && details.expotoken) {
-                    sendNotification(details.expotoken, category, pin.category);
+                    console.log(`(WATCHPOINT) 1: Sending notification to user ${pin.uid} with token ${details.expotoken}`);
+                    sendNotificationConfirmed(details.expotoken, category, pin.category);
                 } else {
                     console.log(`Skipping notification for user ${pin.uid} (muted or no token).`);
                 }
@@ -627,17 +628,19 @@ app.post('/api/validates/add', validateLimiter, async(req, res) =>{
                 return distance <= zone.radius;
             })
 
-        if(nearby.length > 0){
-            console.log(`(WATCHPOINT) ${nearby.length} nearby private pins within zone radius:`)
+        if (nearby.length > 0) {
+            console.log(`(WATCHPOINT) ${nearby.length} nearby private pins within zone radius:`);
 
-            // TODO: Instead of console logging, send a notification.
-            nearby.forEach(zone => {
-                console.log(`[PID: ${zone.pid}] (${zone.latitude}, ${zone.longitude}) for user ${zone.uid}`)
-                getTokenFromUser(zone.uid).then((token) => {
-                    sendNotificationConfirmed(token, pin_data.category, zone.category)
-                })
-
-            })
+            nearby.forEach(async (zone) => {
+                console.log(`[PID: ${zone.pid}] (${zone.latitude}, ${zone.longitude}) for user ${zone.uid}`);
+                const details = await getUserNotificationDetails(zone.uid);
+                if (details && details.notificationsEnabled && details.expotoken) {
+                    console.log(`(WATCHPOINT) 2: Sending notification to user ${zone.uid} with token ${details.expotoken}`);
+                    sendNotificationConfirmed(details.expotoken, pin_data.category, zone.category);
+                } else {
+                    console.log(`Skipping notification for user ${zone.uid} (muted or no token).`);
+                }
+            });
         }
     }
 
