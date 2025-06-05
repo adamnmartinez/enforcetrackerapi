@@ -502,7 +502,7 @@ app.post("/api/pushpin", pinCreateLimiter, async (req, res) => {
                 console.log(`[PID: ${pin.pid}] (${pin.latitude}, ${pin.longitude}) for user ${pin.uid}`);
                 const details = await getUserNotificationDetails(pin.uid);
                 if (details && details.notificationsEnabled && details.expotoken) {
-                    sendNotification(details.expotoken, category, pin.category);
+                    sendNotificationUnconfirmed(details.expotoken, category, pin.category);
                 } else {
                     console.log(`Skipping notification for user ${pin.uid} (muted or no token).`);
                 }
@@ -628,16 +628,16 @@ app.post('/api/validates/add', validateLimiter, async(req, res) =>{
             })
 
         if(nearby.length > 0){
-            console.log(`(WATCHPOINT) ${nearby.length} nearby private pins within zone radius:`)
-
-            // TODO: Instead of console logging, send a notification.
-            nearby.forEach(zone => {
-                console.log(`[PID: ${zone.pid}] (${zone.latitude}, ${zone.longitude}) for user ${zone.uid}`)
-                getTokenFromUser(zone.uid).then((token) => {
-                    sendNotificationConfirmed(token, pin_data.category, zone.category)
-                })
-
-            })
+            console.log(`(WATCHPOINT) ${nearby.length} nearby private pins within zone radius:`);
+            nearby.forEach(async (zone) => {
+                console.log(`[PID: ${pin}] (${pin_data.latitude}, ${pin_data.longitude}) for user ${zone.uid}`);
+                const details = await getUserNotificationDetails(zone.uid);
+                if (details && details.notificationsEnabled && details.expotoken) {
+                    sendNotificationConfirmed(details.expotoken, pin_data.category, zone.category);
+                } else {
+                    console.log(`Skipping notification for user ${zone.uid} (muted or no token).`);
+                }
+            });
         }
     }
 
