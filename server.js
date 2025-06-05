@@ -15,7 +15,13 @@ const { rateLimit } = require("express-rate-limit");
 const SECRET_KEY = "randomsecretkey" // Generate strong security key and hide in ENV file
 const app = express()
 
-app.use(cors())
+app.use(cors({
+    origin: "*",
+    methods: ['GET', 'POST'],
+    allowedHeaders: ['Content-Type', 'Authorization']
+}))
+app.options(/.*/, cors())
+
 app.use(express.json())
 
 // Rate Limiting
@@ -31,7 +37,7 @@ const initializeLimiter = (max, minutes) => {
 
 const registrationLimiter = initializeLimiter(15, 20)
 const authLimiter = initializeLimiter(15, 30)
-const pinCreateLimiter = initializeLimiter(60, 25)
+const pinCreateLimiter = initializeLimiter(60, 10)
 const watcherCreateLimiter = initializeLimiter(60, 15)
 const validateLimiter = initializeLimiter(60, 25)
 
@@ -99,13 +105,13 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-const sendVerifyEmail = async (recipient) => {
+const sendVerifyEmail = async (vericode, recipient) => {
   try {
     const info = await transporter.sendMail({
       from: `"PinPoint Team" <${process.env.MAIL_USER}>`,
       to: recipient,
       subject: "Confirm your PinPoint account!",
-      html: "Thank you for your interest in PinPoint! Click the link below to activate your account.",
+      html: `Thank you for your interest in PinPoint! Click the link below to activate your account. <br/><br/> Click <a href=${process.env.HOSTNAME+"activate/"+vericode}>here</a> to activate.`,
     });
 
     console.log("Message sent: %s", info.messageId);
@@ -115,7 +121,9 @@ const sendVerifyEmail = async (recipient) => {
   }
 }
 
-const sendNotification = (expotoken, reptype, zonetype) => {
+const CONFIRM_THRESHOLD = 3
+
+const sendNotificationConfirmed = (expotoken, reptype, zonetype) => {
     try {
         fetch("https://exp.host/--/api/v2/push/send", {
             method: "POST",
@@ -128,7 +136,28 @@ const sendNotification = (expotoken, reptype, zonetype) => {
             body: JSON.stringify({
                 "to": expotoken,
                 "title": `${reptype}`,
-                "body": `Unconfirmed ${reptype} spotted near your ${zonetype}`
+                "body": `Confirmed ${reptype} spotted near your ${zonetype == "General" ? "watch zone" : `${zonetype}`}.`
+            })
+        })
+    } catch (e) {
+        console.log(`An error occured trying to send a notification with Expo token ${expotoken}`)
+    }
+}
+
+const sendNotificationUnconfirmed = (expotoken, reptype, zonetype) => {
+    try {
+        fetch("https://exp.host/--/api/v2/push/send", {
+            method: "POST",
+            headers: {
+                "host": "exp.host",
+                "accept": "application/json",
+                "accept-encoding": "gzip, deflate",
+                "content-type": "application/json"
+            },
+            body: JSON.stringify({
+                "to": expotoken,
+                "title": `${reptype}`,
+                "body": `Unconfirmed ${reptype} spotted near your ${zonetype == "General" ? "watch zone" : `${zonetype}`}.`
             })
         })
         console.log(`Notification sent to Expo token ${expotoken} for ${reptype} in ${zonetype}`);
@@ -157,6 +186,25 @@ const getUserNotificationDetails = async (uid) => {
     }
 };
 
+const authToken = (req, res, next) => {
+    const token = req.headers['authorization']
+
+    if(!token){
+        console.log("(AUTHTOKEN) No Token Found")
+        return res.sendStatus(401)
+    }
+
+    jwt.verify(token, SECRET_KEY, (err, user) => {
+        if(err){
+            console.log("(AUTHTOKEN) Invalid Token")
+            return res.sendStatus(403);
+        }
+        console.log(`(AUTHTOKEN) Validated User with token ${token}`)
+        req.user = user;
+        next();
+    })
+}
+
 app.listen(PORT, async () => {
     console.log(`Server initalized on port ${PORT}`)
     await pool.connect()
@@ -171,7 +219,8 @@ app.get("/", (req, res) => {
 })
 
 //app.post("/api/login", authLimiter, createUsernameChain(), createPasswordChain(), async (req, res) => {
-app.post("/api/login", authLimiter, async (req, res) => {
+
+app.post("/api/login", async (req, res) => {
     const { username } = req.body
     const { password } = req.body
     const { expotoken } = req.body
@@ -208,12 +257,18 @@ app.post("/api/login", authLimiter, async (req, res) => {
         console.log("(LOGIN) User Authenticated")
         console.log(`(LOGIN) Updating Expo Token: ${expotoken}`)
 
-        const expoTokenPushRes = await pool.query('UPDATE users SET expotoken = $1 WHERE uid = $2', [expotoken, user.uid]);
+        await pool.query('UPDATE users SET expotoken = $1 WHERE uid = $2', [expotoken, user.uid]);
+
+        if (!user.activated) {
+            console.log("User not activate yet, cannot auth.")
+            return res.status(403).json({ uid: user.uid, email: user.gmail, error: "Unactivated Account" })
+        }
 
         console.log("(LOGIN) User authenticated.")
         return res.status(200).json({
             message: `Authenticated User! (${username})`,
             user: username,
+            email: user.gmail,
             token: token
         })
     } catch (err) {
@@ -239,10 +294,18 @@ app.post("/api/signup", registrationLimiter, createUsernameChain(), createPasswo
             });
         }
 
-        const existing = await pool.query('SELECT * FROM users WHERE username = $1', [username])
-        if(existing.rows.length > 0){
-            console.log("(SIGNUP) User Exists, Terminating...")
-            return res.status(409).json({ error: "Username already exists" })
+        const existingUser = await pool.query('SELECT * FROM users WHERE username = $1', [username])
+
+        if (existingUser.rows.length > 0){
+            console.log(`(SIGNUP) Username Already Exists, Terminating...`)
+            return res.status(409).json({ conflict: "username", error: "User account information already in use." })
+        }
+
+        const existingAddress = await pool.query('SELECT * FROM users WHERE gmail = $1', [email])
+
+        if (existingAddress.rows.length > 0){
+            console.log(`(SIGNUP) Email Already In Use, Terminating...`)
+            return res.status(409).json({ conflict: "email", error: "User account information already in use." })
         }
 
         const hashPassword = await bcrypt.hash(password, 10) //hash password
@@ -254,9 +317,13 @@ app.post("/api/signup", registrationLimiter, createUsernameChain(), createPasswo
 
         await pool.query('INSERT INTO validity (uid) VALUES ($1)', [user_id])
 
+        const vericode = uuidv4()
+        await pool.query('INSERT INTO vericode (code, uid) VALUES ($1, $2)', [vericode, user_id])
+        sendVerifyEmail(vericode, email)
+
         const token = jwt.sign({ id: user_id, username: username, email: email }, SECRET_KEY, {expiresIn: '1h'})
 
-        console.log("(SIGNUP) User Created:")
+        console.log("(SIGNUP) User Created Successfully")
 
         return res.status(201).json({
             message: `Registering User... ${username}`,
@@ -270,25 +337,6 @@ app.post("/api/signup", registrationLimiter, createUsernameChain(), createPasswo
         return res.status(500).json({ err: "Internal Server Error" })
     }
 })
-
-function authToken(req, res, next){
-    const token = req.headers['authorization']
-
-    if(!token){
-        console.log("(AUTHTOKEN) No Token Found")
-        return res.sendStatus(401)
-    }
-
-    jwt.verify(token, SECRET_KEY, (err, user) => {
-        if(err){
-            console.log("(AUTHTOKEN) Invalid Token")
-            return res.sendStatus(403);
-        }
-        console.log(`(AUTHTOKEN) Validated User with token ${token}`)
-        req.user = user;
-        next();
-    })
-}
 
 app.get("/api/me", authToken, (req, res) => {
     console.log("(ME) Getting user data...")
@@ -335,13 +383,54 @@ app.post("/api/me/notifications", authToken, async (req, res) => {
   }
 });
 
-app.get("/api/dbtest", async (req, res) => {
+app.get("/api/ping", async (req, res) => {
     try {
         const db_res = await pool.query('SELECT NOW() as now');
         return res.status(200).json({ message: "Server Time Fetched.", data: db_res.rows })
     } catch (e) {
         return res.status(500).json({ message: "Could not communicate with database, internal server error."})
     }
+})
+
+app.get('/api/activate/:vid', async(req, res) => {
+  const vid = req.params['vid']
+  try {
+    const db_res = await pool.query('SELECT * FROM vericode WHERE code = $1', [vid]);
+    const data = db_res.rows[0]
+
+    if (data) {
+        await pool.query('UPDATE users SET activated=TRUE WHERE uid = $1', [data.uid])
+        res.set('Content-Type', 'text/html')
+        return res.status(200).send(Buffer.from(
+            '<h2> PinPoint Account Activated! </h2> Thank you for registering for our app! <br/><br/> Return to the login page to sign in.'
+        ))
+    } else {
+        console.log("Could not activate.")
+        res.set('Content-Type', 'text/html')
+        return res.status(404).send(Buffer.from(
+            '<h2>Outdated Verification Code (404 Not Found)</h2> This code could not be found and was likely invalidated, please regenerate your verification e-mail using the login feature on the app and try again.'
+        ))
+    }
+    
+  } catch (e) {
+    return res.status(500).json({ message: "Could not communicate with database, internal server error."})
+  }
+})
+
+app.post('/api/regenerate-vericode', async (req, res) => {
+    const { uid } = req.body
+    const { email } = req.body
+
+    try {
+        const vericode = uuidv4()
+        await pool.query('INSERT INTO vericode (code, uid) VALUES ($1, $2)', [vericode, uid])
+        sendVerifyEmail(vericode, email)
+        return res.status(201).json({ message: "Code regenerated and email sent" })
+    } catch (e) {
+        console.log("Could not regenerate.")
+        console.log(e)
+        return res.status(500).json({ message: "Could not regenerate.", error: e})
+    }   
 })
 
 app.get("/api/fetchpins", async (req, res) => {
@@ -374,7 +463,6 @@ app.get("/api/userfetch", async (req, res) => {
     try {
         const db_res = await pool.query('SELECT * FROM users');
         console.log("(USERFETCH) Fetching pins...")
-        console.log(db_res.rows)
         return res.status(200).json({ message: "Users Fetched", users: db_res.rows })
     } catch (e) {
         console.log("(USERFETCH) Could not get users")
@@ -420,6 +508,7 @@ app.post("/api/pushpin", pinCreateLimiter, async (req, res) => {
                 }
             });
         }
+
         console.log("(PUSHPIN) Pin Uploaded.")
         return res.status(201).json({ message: "Pin Uploaded" })
     } catch (e) {
@@ -461,13 +550,26 @@ app.post("/api/pushwatcher", watcherCreateLimiter, async (req, res) => {
     const { radius } = req.body
 
     try {
+        const watcherCountQuery = {
+            text: 'SELECT * FROM private_pins WHERE uid = $1',
+            values: [author_id]
+        }
+
         const query = {
             text: 'INSERT INTO private_pins (pid, uid, category, longitude, latitude, timestamp, radius) VALUES ($1, $2, $3, $4, $5, $6, $7)',
             values: [uuidv4(), author_id, category, parseFloat(longitude), parseFloat(latitude), new Date().toISOString(), radius]
         }
-        const db_res = await pool.query(query);
-        console.log(`(PUSHWATCHER) Uploading user watch zone...`)
-        return res.status(201).json({ message: "Watch Zone Uploaded" })
+
+        const watcher_res = await pool.query(watcherCountQuery)
+
+        if (watcher_res.rowCount >= 2) {
+            console.log("(PUSHWATCHER) Too many watch zones.")
+            return res.status(403).json({ message: "Users are restricted to two watch zones per account." })
+        } else {
+            const db_res = await pool.query(query);
+            console.log(`(PUSHWATCHER) Uploading user watch zone...`)
+            return res.status(201).json({ message: "Watch Zone Uploaded" })
+        }
     } catch (e) {
         console.log("(PUSHWATCHER) Could not upload watch zone")
         console.log(e)
@@ -496,8 +598,49 @@ app.post('/api/validates/add', validateLimiter, async(req, res) =>{
       text: "UPDATE validity SET endorsed_pins = endorsed_pins || ARRAY[$1] WHERE uid = $2",
       values: [pin, user]
     }
-    const db_res = await pool.query(query);
+    const db_res = await pool.query(query)
     console.log("(VALIDATES/ADD) Pin Endorsed.")
+
+    const score_res = await pool.query('SELECT * FROM validity WHERE $1 = ANY(endorsed_pins)', [pin]);
+
+    if (score_res.rows.length >= CONFIRM_THRESHOLD) {
+        const pin_data_query = {
+        text: "SELECT longitude, latitude, category FROM public_pins WHERE pid = $1",
+        values: [pin]
+        }
+
+        const pin_data_res = await pool.query(pin_data_query)
+        const pin_data = pin_data_res.rows[0]
+
+        const watch = await pool.query('SELECT * FROM private_pins') //fetch watchpoints
+        const privatePins = watch.rows
+
+        const nearby = privatePins.filter(zone => {
+                const zonePoint = {
+                    latitude : parseFloat(zone.latitude),
+                    longitude : parseFloat(zone.longitude)
+                }
+                const distance = geolib.getDistance({
+                    latitude: pin_data.latitude,
+                    longitude: pin_data.longitude
+                }, zonePoint)
+                return distance <= zone.radius;
+            })
+
+        if(nearby.length > 0){
+            console.log(`(WATCHPOINT) ${nearby.length} nearby private pins within zone radius:`)
+
+            // TODO: Instead of console logging, send a notification.
+            nearby.forEach(zone => {
+                console.log(`[PID: ${zone.pid}] (${zone.latitude}, ${zone.longitude}) for user ${zone.uid}`)
+                getTokenFromUser(zone.uid).then((token) => {
+                    sendNotificationConfirmed(token, pin_data.category, zone.category)
+                })
+
+            })
+        }
+    }
+
     return res.status(200).json({ message: "Endorsed pin" });
   }catch (e){
     console.log("Unable to complete request")
@@ -549,7 +692,7 @@ app.post("/api/validates/getscore", async (req, res) => {
     }
 })
 
-app.post("/api/validates/peek", async (req, res) => {
+app.get("/api/validates/peek", async (req, res) => {
     const db_res = await pool.query('SELECT * FROM validity');
     console.log(db_res.rows)
     return res.status(200).json({ rows: db_res.rows })
