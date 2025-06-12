@@ -1,15 +1,26 @@
 const request = require('supertest')
 const API_URL = 'http://localhost:8000'
+require('dotenv').config();
+const { Pool } = require('pg');
 
 let testID = null;
 let token = null;
 let username = null;
 let email = null;
 
+const pool = new Pool({
+  host: process.env.PG_HOST,
+  port: process.env.PG_PORT,
+  user: process.env.PG_USER,
+  password: process.env.PG_PASSWORD,
+  database: process.env.PG_DATABASE,
+  ssl: { rejectUnauthorized: false },
+});
+
 
 describe('Backend api tests', () => {
-    //RUNNING API
-    test('GET / should confirm API is running', async () => {
+  //RUNNING API
+  test('GET / should confirm API is running', async () => {
     const res = await request(API_URL).get('/');
     expect(res.statusCode).toBe(200);
     expect(res.body.message).toMatch(/PinPoint API server is running/i);
@@ -33,18 +44,19 @@ describe('Backend api tests', () => {
     beforeAll(async () => {
       email = `testuser_${Date.now()}@ucsc.edu`;
       username = `testuser_${Date.now()}`;
-
+      
       const signupRes = await request(API_URL).post('/api/signup').send({
         email,
         username,
         password: 'Pass123!',
       });
-
+      
       expect(signupRes.statusCode).toBe(201);
       testID = signupRes.body.uid;
-
+      
+      //Activate user manually in the db
+      await pool.query('UPDATE users SET activated = TRUE WHERE uid = $1', [testID]);
       await request(API_URL).post('/api/validates/addUser').send({ user: testID });
-
       const loginRes = await request(API_URL).post('/api/login').send({
         username,
         password: 'Pass123!',
@@ -139,6 +151,11 @@ describe('Backend api tests', () => {
 
       const res = await request(API_URL).post('/api/deletepin').send({ pid: pin.pid, uid: testID });
       expect(res.statusCode).toBe(200);
+    });
+
+    //close PostgreSQL connection
+    afterAll(async () => {
+      await pool.end(); 
     });
   });
 });
